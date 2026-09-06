@@ -193,7 +193,14 @@ export default function App() {
 
     if (isHuman) {
       setActiveAlarm(alertData);
-      alarmSystem.playHumanBreachAlarm(5.0);
+      // CONTINUOUS MILITARY SIREN: Rings indefinitely until silenced
+      alarmSystem.startContinuousSiren();
+    } else {
+      // Animal or Safe Suppression: Stop siren immediately
+      if (activeAlarm) {
+        setActiveAlarm(null);
+      }
+      alarmSystem.stop();
     }
   };
 
@@ -278,7 +285,7 @@ export default function App() {
         activeAlarm={activeAlarm}
       />
 
-      {/* ACTIVE CRITICAL INCURSION SIREN & ALARM BANNER */}
+      {/* ACTIVE CRITICAL INCURSION CONTINUOUS SIREN BANNER */}
       {activeAlarm && (
         <div className="bg-[#93000a] text-[#ffdad6] border-b-2 border-[#ffb4ab] px-4 py-2 flex items-center justify-between z-50 animate-pulse shadow-2xl">
           <div className="flex items-center gap-3">
@@ -286,7 +293,7 @@ export default function App() {
             <div>
               <div className="font-mono-hud text-xs font-black uppercase tracking-widest flex items-center gap-2">
                 <span>🚨 CRITICAL INCURSION DETECTED // PERSON BREACH AT {activeAlarm.camera_id}</span>
-                <span className="bg-[#ffb4ab] text-[#690005] px-2 py-0.5 rounded text-[10px] font-bold">KLAXON ACTIVE</span>
+                <span className="bg-[#ffb4ab] text-[#690005] px-2 py-0.5 rounded text-[10px] font-bold">CONTINUOUS KLAXON RINGING</span>
               </div>
               <p className="font-mono-hud text-[11px] text-[#ffdad6]/90">
                 Target: {activeAlarm.object_type?.toUpperCase()} • Zone: {activeAlarm.zone_name} • Sector: {activeAlarm.bop_id}
@@ -302,7 +309,7 @@ export default function App() {
             </button>
             <button
               onClick={handleSilenceAlarm}
-              className="px-3 py-1 bg-[#101419]/80 hover:bg-[#101419] text-[#ffdad6] border border-[#ffb4ab] font-mono-hud text-xs font-bold rounded uppercase tracking-wider transition-colors"
+              className="px-3 py-1 bg-[#101419]/90 hover:bg-black text-[#ffdad6] border-2 border-[#ffb4ab] font-mono-hud text-xs font-bold rounded uppercase tracking-wider transition-colors shadow"
             >
               SILENCE SIREN
             </button>
@@ -378,6 +385,7 @@ export default function App() {
                     onToggleFog={handleToggleFog}
                     onSelectCamera={(cam) => setActiveTab('zones')}
                     onTriggerAlert={handleNewAlert}
+                    onSilenceAlarm={handleSilenceAlarm}
                     activeAlarm={activeAlarm}
                   />
                 </div>
@@ -407,6 +415,7 @@ export default function App() {
                 onToggleFog={handleToggleFog}
                 onSelectCamera={(cam) => setActiveTab('zones')}
                 onTriggerAlert={handleNewAlert}
+                onSilenceAlarm={handleSilenceAlarm}
                 activeAlarm={activeAlarm}
               />
             </div>
@@ -429,9 +438,9 @@ export default function App() {
                       className="p-3 bg-[#181c21] border border-[#3c494a] hover:border-[#45dee8] rounded flex items-center justify-between cursor-pointer transition-colors"
                     >
                       <div className="flex items-center gap-3">
-                        <span className={`w-2.5 h-2.5 rounded-full ${a.severity === 'CRITICAL' ? 'bg-[#ffb4ab]' : 'bg-[#ff9089]'}`}></span>
+                        <span className={`w-2.5 h-2.5 rounded-full ${a.severity === 'CRITICAL' ? 'bg-[#ffb4ab]' : (a.severity === 'SAFE_SUPPRESSED' ? 'bg-[#10b981]' : 'bg-[#ff9089]')}`}></span>
                         <div>
-                          <p className="font-bold text-[#e0e2ea] text-xs font-mono-hud uppercase">{a.object_type} INTRUSION — {a.zone_name}</p>
+                          <p className="font-bold text-[#e0e2ea] text-xs font-mono-hud uppercase">{a.object_type} {a.severity === 'SAFE_SUPPRESSED' ? 'SUPPRESSED (SAFE)' : 'INTRUSION'} — {a.zone_name}</p>
                           <p className="text-[11px] text-[#bbc9ca] font-mono-hud">{a.camera_id} • {a.bop_id} • {a.formatted_time}</p>
                         </div>
                       </div>

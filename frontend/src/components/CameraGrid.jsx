@@ -5,13 +5,14 @@ export default function CameraGrid({
   onToggleFog, 
   onSelectCamera, 
   onTriggerAlert,
+  onSilenceAlarm,
   activeAlarm 
 }) {
   const [isWebcamActive, setIsWebcamActive] = useState(false);
-  const [activeSpectrum, setActiveSpectrum] = useState('ALL'); // ALL, OPTICAL, THERMAL, IRONBOW
-  const [viewMode, setViewMode] = useState('2x2'); // 2x2, 3x2
+  const [activeSpectrum, setActiveSpectrum] = useState('ALL');
+  const [viewMode, setViewMode] = useState('2x2');
   const [webcamStream, setWebcamStream] = useState(null);
-  const [activeTargetType, setActiveTargetType] = useState('human'); // 'human', 'animal', 'vehicle', 'none'
+  const [activeTargetType, setActiveTargetType] = useState('none'); // 'human', 'animal', 'vehicle', 'none'
   const videoRef = useRef(null);
 
   // Attach webcam stream to video element
@@ -58,6 +59,8 @@ export default function CameraGrid({
         setWebcamStream(null);
       }
       setIsWebcamActive(false);
+      setActiveTargetType('none');
+      if (onSilenceAlarm) onSilenceAlarm();
 
       fetch(`http://127.0.0.1:8000/api/cameras/${camId}/source`, {
         method: 'POST',
@@ -79,13 +82,15 @@ export default function CameraGrid({
           object_type: 'person',
           confidence: 0.96,
           incursion_type: 'STERILE_ZONE_BREACH',
-          zone_name: 'Zone A - Primary Defile',
+          zone_name: 'Sterile Perimeter Zone (Zero-Tolerance)',
           severity: 'CRITICAL',
           timestamp: Date.now() / 1000,
           formatted_time: new Date().toLocaleTimeString()
         });
       }
     } else if (type === 'animal') {
+      // Animal suppression: SILENCE ALARM & Show Green Tag
+      if (onSilenceAlarm) onSilenceAlarm();
       if (onTriggerAlert) {
         onTriggerAlert({
           id: `ALT-WILDLIFE-${Math.floor(10000 + Math.random() * 90000)}`,
@@ -93,7 +98,7 @@ export default function CameraGrid({
           bop_id: 'BOP-01-NATHULA',
           object_type: 'cow',
           confidence: 0.92,
-          incursion_type: 'WILDLIFE_PASSAGE',
+          incursion_type: 'WILDLIFE_SUPPRESSED',
           zone_name: 'Sterile Perimeter Zone',
           severity: 'SAFE_SUPPRESSED',
           timestamp: Date.now() / 1000,
@@ -115,6 +120,8 @@ export default function CameraGrid({
           formatted_time: new Date().toLocaleTimeString()
         });
       }
+    } else if (type === 'none') {
+      if (onSilenceAlarm) onSilenceAlarm();
     }
   };
 
@@ -136,9 +143,6 @@ export default function CameraGrid({
           <button className="px-2.5 py-0.5 rounded bg-[#1c2025] text-[#e0e2ea] font-mono-hud text-[11px] hover:bg-[#262a30] transition-colors" type="button">
             BOP-04 (THAR DESERT)
           </button>
-          <button className="px-2.5 py-0.5 rounded bg-[#1c2025] text-[#e0e2ea] font-mono-hud text-[11px] hover:bg-[#262a30] transition-colors" type="button">
-            BOP-03 (LADAKH FOG)
-          </button>
         </div>
 
         {/* Live Target Detection Mode Switcher */}
@@ -149,39 +153,51 @@ export default function CameraGrid({
             onClick={() => handleDetectTarget('human')}
             className={`flex items-center gap-1 px-2.5 py-1 rounded font-mono-hud text-[10px] font-bold transition-all shadow-sm ${
               activeTargetType === 'human'
-                ? 'bg-[#93000a] text-[#ffdad6] border border-[#ffb4ab] shadow-[0_0_10px_rgba(255,180,171,0.4)] animate-pulse'
+                ? 'bg-[#93000a] text-[#ffdad6] border border-[#ffb4ab] shadow-[0_0_12px_rgba(255,180,171,0.5)] animate-pulse'
                 : 'bg-[#ffb4ab]/15 text-[#ffb4ab] border border-[#ffb4ab]/40 hover:bg-[#ffb4ab]/30'
             }`}
-            title="Detect human / person in sterile zone and trigger siren klaxon"
+            title="Detect human in sterile zone -> Rings continuous alarm siren"
           >
             <span className="material-symbols-outlined text-xs">directions_run</span>
-            <span>🚨 HUMAN (ALARM)</span>
+            <span>🚨 HUMAN (CONTINUOUS ALARM)</span>
           </button>
 
           <button
             onClick={() => handleDetectTarget('animal')}
             className={`flex items-center gap-1 px-2.5 py-1 rounded font-mono-hud text-[10px] font-bold transition-all shadow-sm ${
               activeTargetType === 'animal'
-                ? 'bg-[#00c2cc] text-[#004a4f] border border-[#45dee8] shadow-[0_0_10px_rgba(69,222,232,0.4)]'
-                : 'bg-[#004a4f]/30 text-[#45dee8] border border-[#45dee8]/40 hover:bg-[#004a4f]/50'
+                ? 'bg-[#059669] text-white border-2 border-[#34d399] shadow-[0_0_15px_rgba(52,211,153,0.6)]'
+                : 'bg-[#059669]/20 text-[#34d399] border border-[#34d399]/40 hover:bg-[#059669]/40'
             }`}
-            title="Detect cow / wildlife with safe suppression (No false alarms)"
+            title="Detect cow/wildlife -> Shows green tag & silences alarm"
           >
             <span className="material-symbols-outlined text-xs">pets</span>
-            <span>🐄 ANIMAL (SUPPRESSED)</span>
+            <span>🐄 COW / ANIMAL (GREEN SAFE)</span>
           </button>
 
           <button
             onClick={() => handleDetectTarget('vehicle')}
             className={`flex items-center gap-1 px-2.5 py-1 rounded font-mono-hud text-[10px] font-bold transition-all shadow-sm ${
               activeTargetType === 'vehicle'
-                ? 'bg-[#ff9089] text-[#8b0012] border border-[#ff9089] shadow-[0_0_10px_rgba(255,144,137,0.4)]'
-                : 'bg-[#ff9089]/20 text-[#ff9089] border border-[#ff9089]/40 hover:bg-[#ff9089]/30'
+                ? 'bg-[#d97706] text-white border border-[#fde68a] shadow-[0_0_10px_rgba(251,191,36,0.5)]'
+                : 'bg-[#d97706]/20 text-[#fde68a] border border-[#fde68a]/40 hover:bg-[#d97706]/30'
             }`}
-            title="Detect vehicle / truck in perimeter"
+            title="Detect vehicle in perimeter"
           >
             <span className="material-symbols-outlined text-xs">directions_car</span>
             <span>🚙 VEHICLE</span>
+          </button>
+
+          <button
+            onClick={() => handleDetectTarget('none')}
+            className={`px-2 py-1 rounded font-mono-hud text-[10px] border transition-colors ${
+              activeTargetType === 'none'
+                ? 'bg-[#262a30] text-[#45dee8] border-[#45dee8]'
+                : 'bg-[#1c2025] text-[#bbc9ca] border-[#3c494a] hover:text-white'
+            }`}
+            title="Clear active detection box"
+          >
+            CLEAR
           </button>
 
           <div className="h-4 w-px bg-[#3c494a]"></div>
@@ -270,61 +286,61 @@ export default function CameraGrid({
                   />
                 )}
 
-                {/* TACTICAL SVG HUD OVERLAY: Sterile Zone, Tripwire Line & Reticles */}
-                <svg 
-                  className="absolute inset-0 w-full h-full pointer-events-none z-10" 
-                  viewBox="0 0 640 360" 
-                  preserveAspectRatio="none"
-                >
-                  {/* 1. Yellow Sterile Perimeter Zone Polygon */}
-                  <polygon 
-                    points="20,130 550,130 620,330 20,330" 
-                    fill="rgba(234, 179, 8, 0.12)" 
-                    stroke="#EAB308" 
-                    strokeWidth="2" 
-                    strokeDasharray="6 4"
-                  />
-                  <text 
-                    x="28" 
-                    y="150" 
-                    fill="#EAB308" 
-                    fontFamily="monospace" 
-                    fontSize="11" 
-                    fontWeight="bold"
-                    letterSpacing="0.5"
+                {/* TACTICAL SVG HUD: Sterile Zone & Tripwire Line (rendered on client webcam) */}
+                {isCam01 && isWebcamActive && (
+                  <svg 
+                    className="absolute inset-0 w-full h-full pointer-events-none z-10" 
+                    viewBox="0 0 640 360" 
+                    preserveAspectRatio="none"
                   >
-                    Sterile Perimeter Zone (Zero-Tolerance)
-                  </text>
+                    {/* 1. Yellow Sterile Perimeter Zone Polygon */}
+                    <polygon 
+                      points="20,130 550,130 620,330 20,330" 
+                      fill="rgba(234, 179, 8, 0.12)" 
+                      stroke="#EAB308" 
+                      strokeWidth="2" 
+                      strokeDasharray="6 4"
+                    />
+                    <text 
+                      x="28" 
+                      y="150" 
+                      fill="#EAB308" 
+                      fontFamily="monospace" 
+                      fontSize="11" 
+                      fontWeight="bold"
+                    >
+                      Sterile Perimeter Zone (Zero-Tolerance)
+                    </text>
 
-                  {/* 2. Red Horizontal Tripwire Line */}
-                  <line 
-                    x1="0" 
-                    y1="210" 
-                    x2="640" 
-                    y2="210" 
-                    stroke="#EF4444" 
-                    strokeWidth="3" 
-                  />
-                  <text 
-                    x="15" 
-                    y="200" 
-                    fill="#EF4444" 
-                    fontFamily="monospace" 
-                    fontSize="11" 
-                    fontWeight="bold"
-                    letterSpacing="0.5"
-                  >
-                    TRIPWIRE: Line of Control Tripwire Alpha
-                  </text>
+                    {/* 2. Red Horizontal Tripwire Line */}
+                    <line 
+                      x1="0" 
+                      y1="210" 
+                      x2="640" 
+                      y2="210" 
+                      stroke="#EF4444" 
+                      strokeWidth="3" 
+                    />
+                    <text 
+                      x="15" 
+                      y="200" 
+                      fill="#EF4444" 
+                      fontFamily="monospace" 
+                      fontSize="11" 
+                      fontWeight="bold"
+                    >
+                      TRIPWIRE: Line of Control Tripwire Alpha
+                    </text>
 
-                  {/* 3. Center Crosshair Reticle */}
-                  <line x1="320" y1="140" x2="320" y2="200" stroke="#06B6D4" strokeWidth="1.5" strokeOpacity="0.8" />
-                  <line x1="290" y1="170" x2="350" y2="170" stroke="#06B6D4" strokeWidth="1.5" strokeOpacity="0.8" />
-                  <circle cx="320" cy="170" r="14" stroke="#06B6D4" strokeWidth="1.5" strokeOpacity="0.8" fill="none" />
-                </svg>
+                    {/* 3. Center Crosshair Reticle */}
+                    <line x1="320" y1="140" x2="320" y2="200" stroke="#06B6D4" strokeWidth="1.5" strokeOpacity="0.8" />
+                    <line x1="290" y1="170" x2="350" y2="170" stroke="#06B6D4" strokeWidth="1.5" strokeOpacity="0.8" />
+                    <circle cx="320" cy="170" r="14" stroke="#06B6D4" strokeWidth="1.5" strokeOpacity="0.8" fill="none" />
+                  </svg>
+                )}
 
-                {/* DYNAMIC AI TARGET BOUNDING BOX */}
-                {isCam01 && activeTargetType === 'human' && (
+                {/* DYNAMIC AI TARGET BOUNDING BOXES FOR BROWSER WEBCAM */}
+                {isCam01 && isWebcamActive && activeTargetType === 'human' && (
                   <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-44 h-56 border-2 border-[#ffb4ab] bg-[#ffb4ab]/15 pointer-events-none z-20 flex flex-col justify-between p-1.5 shadow-[0_0_20px_rgba(255,180,171,0.5)]">
                     <div className="bg-[#93000a] text-[#ffdad6] px-1.5 py-0.5 rounded text-[9px] font-mono-hud font-bold uppercase flex items-center justify-between">
                       <span className="flex items-center gap-1">
@@ -334,7 +350,7 @@ export default function CameraGrid({
                       <span className="text-[#ffb4ab]">96% CONF</span>
                     </div>
                     {/* Reticle Red Dot Centroid */}
-                    <div className="w-3 h-3 bg-[#ffb4ab] rounded-full mx-auto shadow-md animate-pulse"></div>
+                    <div className="w-3.5 h-3.5 bg-[#ef4444] rounded-full mx-auto shadow-lg animate-pulse border border-white"></div>
                     {/* Corner Reticle Accents */}
                     <div className="absolute -top-1 -left-1 w-2.5 h-2.5 bg-[#ffb4ab]"></div>
                     <div className="absolute -top-1 -right-1 w-2.5 h-2.5 bg-[#ffb4ab]"></div>
@@ -346,26 +362,29 @@ export default function CameraGrid({
                   </div>
                 )}
 
-                {/* ANIMAL SUPPRESSION BOUNDING BOX */}
-                {isCam01 && activeTargetType === 'animal' && (
-                  <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-52 h-44 border-2 border-[#10b981] bg-[#10b981]/15 pointer-events-none z-20 flex flex-col justify-between p-1.5 shadow-[0_0_15px_rgba(16,185,129,0.4)]">
-                    <div className="bg-[#064e3b] text-[#a7f3d0] px-1.5 py-0.5 rounded text-[9px] font-mono-hud font-bold uppercase flex items-center justify-between">
-                      <span>ID:02 TARGET: COW / WILDLIFE</span>
+                {/* ANIMAL SUPPRESSION BOUNDING BOX (GREEN) */}
+                {isCam01 && isWebcamActive && activeTargetType === 'animal' && (
+                  <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-56 h-48 border-2 border-[#10b981] bg-[#10b981]/20 pointer-events-none z-20 flex flex-col justify-between p-1.5 shadow-[0_0_20px_rgba(16,185,129,0.5)]">
+                    <div className="bg-[#064e3b] text-[#a7f3d0] px-2 py-0.5 rounded text-[9px] font-mono-hud font-bold uppercase flex items-center justify-between border border-[#34d399]">
+                      <span className="flex items-center gap-1">
+                        <span className="w-2 h-2 rounded-full bg-[#34d399]"></span>
+                        <span>ID:02 TARGET: COW / WILDLIFE</span>
+                      </span>
                       <span className="text-[#34d399]">92% CONF</span>
                     </div>
-                    <div className="w-3 h-3 bg-[#10b981] rounded-full mx-auto shadow-md"></div>
+                    <div className="w-3.5 h-3.5 bg-[#10b981] rounded-full mx-auto shadow-md border border-white"></div>
                     <div className="absolute -top-1 -left-1 w-2.5 h-2.5 bg-[#10b981]"></div>
                     <div className="absolute -top-1 -right-1 w-2.5 h-2.5 bg-[#10b981]"></div>
                     <div className="absolute -bottom-1 -left-1 w-2.5 h-2.5 bg-[#10b981]"></div>
                     <div className="absolute -bottom-1 -right-1 w-2.5 h-2.5 bg-[#10b981]"></div>
-                    <div className="bg-[#064e3b] text-[#a7f3d0] px-1 text-[8px] font-mono-hud font-bold text-center uppercase tracking-wider">
-                      SAFE — ANIMAL (COW), SUPPRESSED
+                    <div className="bg-[#064e3b] text-[#a7f3d0] px-1 text-[8px] font-mono-hud font-bold text-center uppercase tracking-wider border-t border-[#34d399]">
+                      SAFE — ANIMAL (COW), SUPPRESSED // NO ALARM
                     </div>
                   </div>
                 )}
 
                 {/* VEHICULAR INCURSION BOUNDING BOX */}
-                {isCam01 && activeTargetType === 'vehicle' && (
+                {isCam01 && isWebcamActive && activeTargetType === 'vehicle' && (
                   <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-56 h-48 border-2 border-[#f59e0b] bg-[#f59e0b]/15 pointer-events-none z-20 flex flex-col justify-between p-1.5 shadow-[0_0_15px_rgba(245,158,11,0.4)]">
                     <div className="bg-[#78350f] text-[#fef3c7] px-1.5 py-0.5 rounded text-[9px] font-mono-hud font-bold uppercase flex items-center justify-between">
                       <span>ID:03 TARGET: VEHICLE / TRUCK</span>
@@ -382,11 +401,11 @@ export default function CameraGrid({
                   </div>
                 )}
 
-                {/* Optical Sensor Corner Crop Marks */}
-                <div className="absolute top-2 left-2 w-3.5 h-3.5 border-t-2 border-l-2 border-[#45dee8] pointer-events-none opacity-80"></div>
-                <div className="absolute top-2 right-2 w-3.5 h-3.5 border-t-2 border-r-2 border-[#45dee8] pointer-events-none opacity-80"></div>
-                <div className="absolute bottom-2 left-2 w-3.5 h-3.5 border-b-2 border-l-2 border-[#45dee8] pointer-events-none opacity-80"></div>
-                <div className="absolute bottom-2 right-2 w-3.5 h-3.5 border-b-2 border-r-2 border-[#45dee8] pointer-events-none opacity-80"></div>
+                {/* Corner Crop Marks */}
+                <div className="absolute top-2 left-2 w-3.5 h-3.5 border-t-2 border-l-2 border-[#45dee8] pointer-events-none opacity-80 z-10"></div>
+                <div className="absolute top-2 right-2 w-3.5 h-3.5 border-t-2 border-r-2 border-[#45dee8] pointer-events-none opacity-80 z-10"></div>
+                <div className="absolute bottom-2 left-2 w-3.5 h-3.5 border-b-2 border-l-2 border-[#45dee8] pointer-events-none opacity-80 z-10"></div>
+                <div className="absolute bottom-2 right-2 w-3.5 h-3.5 border-b-2 border-r-2 border-[#45dee8] pointer-events-none opacity-80 z-10"></div>
 
                 {/* Fog De-Noising Active Badge */}
                 {isFogActive && (
