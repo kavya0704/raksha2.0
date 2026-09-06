@@ -170,18 +170,13 @@ export default function CameraGrid({
     detectFrame();
   };
 
-  const toggleWebcam = async (camId) => {
+  const toggleWebcam = async (camId = 'CAM-01') => {
     if (!isWebcamActive) {
       try {
-        fetch(`http://127.0.0.1:8000/api/cameras/${camId}/source`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ source: 'webcam' })
-        }).catch(() => {});
-
         if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
           const stream = await navigator.mediaDevices.getUserMedia({ 
-            video: { width: { ideal: 640 }, height: { ideal: 360 } } 
+            video: { width: { ideal: 640 }, height: { ideal: 360 } },
+            audio: false
           });
           setWebcamStream(stream);
           setIsWebcamActive(true);
@@ -190,22 +185,39 @@ export default function CameraGrid({
         console.warn("Direct webcam access error:", err);
       }
     } else {
+      // Complete Shutdown of webcam
       if (animationFrameRef.current) {
         cancelAnimationFrame(animationFrameRef.current);
+        animationFrameRef.current = null;
       }
       if (webcamStream) {
-        webcamStream.getTracks().forEach(track => track.stop());
+        webcamStream.getTracks().forEach(track => {
+          track.stop();
+          track.enabled = false;
+        });
         setWebcamStream(null);
+      }
+      if (videoRef.current) {
+        videoRef.current.srcObject = null;
+        try { videoRef.current.pause(); } catch (e) {}
       }
       setIsWebcamActive(false);
       setLiveDetections([]);
       if (onSilenceAlarm) onSilenceAlarm();
 
-      fetch(`http://127.0.0.1:8000/api/cameras/${camId}/source`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ source: 'demo' })
-      }).catch(() => {});
+      // Reset backend to demo file to free hardware
+      try {
+        fetch(`/api/cameras/${camId}/source`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ source: 'demo' })
+        }).catch(() => {});
+        fetch(`http://127.0.0.1:8000/api/cameras/${camId}/source`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ source: 'demo' })
+        }).catch(() => {});
+      } catch (e) {}
     }
   };
 
@@ -306,9 +318,22 @@ export default function CameraGrid({
                 </div>
                 <div className="flex items-center gap-1.5 flex-shrink-0">
                   {isCam01 && (
-                    <span className="font-mono-hud text-[9px] bg-[#ffb4ab] text-[#690005] px-1.5 py-0.5 rounded font-bold uppercase">
-                      P1 INCURSION SENTINEL
-                    </span>
+                    <div className="flex items-center gap-1.5">
+                      {isWebcamActive ? (
+                        <button
+                          onClick={() => toggleWebcam(cam.id)}
+                          className="font-mono-hud text-[9px] bg-[#93000a] text-[#ffdad6] border border-[#ffb4ab] hover:bg-[#ba1a1a] px-2 py-0.5 rounded font-bold uppercase flex items-center gap-1 shadow-md animate-pulse cursor-pointer z-30"
+                          title="Click to instantly turn off webcam"
+                        >
+                          <span className="material-symbols-outlined text-xs">close</span>
+                          <span>CLOSE CAMERA</span>
+                        </button>
+                      ) : (
+                        <span className="font-mono-hud text-[9px] bg-[#ffb4ab] text-[#690005] px-1.5 py-0.5 rounded font-bold uppercase">
+                          P1 INCURSION SENTINEL
+                        </span>
+                      )}
+                    </div>
                   )}
                   <span className="font-mono-hud text-[9px] text-[#bbc9ca] font-bold">
                     {cam.fps || 29.8} FPS
@@ -483,7 +508,7 @@ export default function CameraGrid({
                       title="Switch between live laptop webcam and demo sentinel video"
                     >
                       <span className="material-symbols-outlined text-xs">videocam</span>
-                      <span>{isWebcamActive ? '🔴 WEBCAM (ACTIVE)' : '📷 WEBCAM'}</span>
+                      <span>{isWebcamActive ? '🔴 STOP / CLOSE WEBCAM' : '📷 OPEN WEBCAM'}</span>
                     </button>
                   )}
 

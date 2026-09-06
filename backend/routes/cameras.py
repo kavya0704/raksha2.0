@@ -93,7 +93,7 @@ def switch_camera_source(camera_id: str, req: SourceChangeRequest):
         raise HTTPException(status_code=404, detail="Camera Edge unit not active")
 
     target_src = req.source
-    if req.source == "demo":
+    if req.source in ["demo", "close", "stop", "off", "reset"]:
         target_src = VIDEO_MAP.get(camera_id, VIDEO_MAP["CAM-01"])
     elif req.source == "webcam":
         target_src = "0"
