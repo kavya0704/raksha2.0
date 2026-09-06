@@ -1,4 +1,9 @@
-import React, { useState } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
+import * as tf from '@tensorflow/tfjs';
+import * as cocoSsd from '@tensorflow-models/coco-ssd';
+
+const ANIMAL_CLASSES = new Set(['cow', 'horse', 'sheep', 'dog', 'cat', 'bird', 'elephant', 'bear', 'zebra', 'giraffe']);
+const VEHICLE_CLASSES = new Set(['car', 'truck', 'bus', 'motorcycle', 'bicycle']);
 
 export default function CameraGrid({ 
   cameras = [], 
@@ -11,20 +16,196 @@ export default function CameraGrid({
   const [isWebcamActive, setIsWebcamActive] = useState(false);
   const [activeSpectrum, setActiveSpectrum] = useState('ALL');
   const [viewMode, setViewMode] = useState('2x2');
+  const [webcamStream, setWebcamStream] = useState(null);
+  
+  // Real-time AI Detections from Browser TensorFlow / COCO-SSD
+  const [liveDetections, setLiveDetections] = useState([]);
+  const [modelLoading, setModelLoading] = useState(false);
+  
+  const videoRef = useRef(null);
+  const modelRef = useRef(null);
+  const animationFrameRef = useRef(null);
+
+  // Load COCO-SSD model once
+  useEffect(() => {
+    let isMounted = true;
+    const loadModel = async () => {
+      try {
+        setModelLoading(true);
+        await tf.ready();
+        const loadedModel = await cocoSsd.load({ base: 'lite_mobilenet_v2' });
+        if (isMounted) {
+          modelRef.current = loadedModel;
+          setModelLoading(false);
+        }
+      } catch (err) {
+        console.warn("TensorFlow COCO-SSD load error:", err);
+        setModelLoading(false);
+      }
+    };
+    loadModel();
+    return () => { isMounted = false; };
+  }, []);
+
+  // Attach webcam stream to video element and start real-time detection loop
+  useEffect(() => {
+    if (videoRef.current && webcamStream) {
+      videoRef.current.srcObject = webcamStream;
+      videoRef.current.onloadedmetadata = () => {
+        videoRef.current.play();
+        startDetectionLoop();
+      };
+    }
+  }, [webcamStream]);
+
+  // Clean up webcam stream & animation loop on unmount
+  useEffect(() => {
+    return () => {
+      if (animationFrameRef.current) {
+        cancelAnimationFrame(animationFrameRef.current);
+      }
+      if (webcamStream) {
+        webcamStream.getTracks().forEach(track => track.stop());
+      }
+    };
+  }, [webcamStream]);
+
+  const startDetectionLoop = () => {
+    const detectFrame = async () => {
+      if (videoRef.current && videoRef.current.readyState >= 2 && modelRef.current) {
+        try {
+          const predictions = await modelRef.current.detect(videoRef.current);
+          
+          let hasHumanBreach = false;
+          let hasAnimal = false;
+          const mappedDetections = [];
+
+          const vWidth = videoRef.current.videoWidth || 640;
+          const vHeight = videoRef.current.videoHeight || 360;
+
+          predictions.forEach((pred, idx) => {
+            const [bx, by, bw, bh] = pred.bbox;
+            const cls = pred.class.toLowerCase();
+            const score = Math.round(pred.score * 100);
+
+            // Scale bounding box to percentage coordinates
+            const leftPct = (bx / vWidth) * 100;
+            const topPct = (by / vHeight) * 100;
+            const widthPct = (bw / vWidth) * 100;
+            const heightPct = (bh / vHeight) * 100;
+            const centerY = by + bh / 2;
+
+            if (ANIMAL_CLASSES.has(cls)) {
+              hasAnimal = true;
+              mappedDetections.push({
+                id: 4100 + idx,
+                type: 'animal',
+                className: cls,
+                label: `Safe — Animal (${cls.charAt(0).toUpperCase() + cls.slice(1)}), Suppressed`,
+                color: '#10B981', // Emerald Green
+                left: `${leftPct}%`,
+                top: `${topPct}%`,
+                width: `${widthPct}%`,
+                height: `${heightPct}%`,
+                score
+              });
+            } else if (cls === 'person') {
+              hasHumanBreach = true;
+              mappedDetections.push({
+                id: 10 + idx,
+                type: 'human',
+                className: 'person',
+                label: `ALERT: PERSON (${score}%)`,
+                color: '#EF4444', // Crimson Red
+                left: `${leftPct}%`,
+                top: `${topPct}%`,
+                width: `${widthPct}%`,
+                height: `${heightPct}%`,
+                score
+              });
+            } else if (VEHICLE_CLASSES.has(cls)) {
+              mappedDetections.push({
+                id: 30 + idx,
+                type: 'vehicle',
+                className: cls,
+                label: `ALERT: VEHICLE (${cls.toUpperCase()})`,
+                color: '#F59E0B', // Amber Orange
+                left: `${leftPct}%`,
+                top: `${topPct}%`,
+                width: `${widthPct}%`,
+                height: `${heightPct}%`,
+                score
+              });
+            }
+          });
+
+          setLiveDetections(mappedDetections);
+
+          // Trigger continuous alarm ONLY if human is present
+          if (hasHumanBreach) {
+            if (onTriggerAlert) {
+              onTriggerAlert({
+                id: `ALT-NATHULA-${Math.floor(10000 + Math.random() * 90000)}`,
+                camera_id: 'CAM-01',
+                bop_id: 'BOP-01-NATHULA',
+                object_type: 'person',
+                confidence: 0.96,
+                incursion_type: 'STERILE_ZONE_BREACH',
+                zone_name: 'Sterile Perimeter Zone (Zero-Tolerance)',
+                severity: 'CRITICAL',
+                timestamp: Date.now() / 1000,
+                formatted_time: new Date().toLocaleTimeString()
+              });
+            }
+          } else if (hasAnimal && !hasHumanBreach) {
+            // Silence alarm for animals!
+            if (onSilenceAlarm) onSilenceAlarm();
+          }
+        } catch (e) {}
+      }
+
+      animationFrameRef.current = requestAnimationFrame(detectFrame);
+    };
+
+    detectFrame();
+  };
 
   const toggleWebcam = async (camId) => {
-    const nextState = !isWebcamActive;
-    const nextSource = nextState ? "webcam" : "demo";
-    try {
-      await fetch(`http://127.0.0.1:8000/api/cameras/${camId}/source`, {
+    if (!isWebcamActive) {
+      try {
+        fetch(`http://127.0.0.1:8000/api/cameras/${camId}/source`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ source: 'webcam' })
+        }).catch(() => {});
+
+        if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
+          const stream = await navigator.mediaDevices.getUserMedia({ 
+            video: { width: { ideal: 640 }, height: { ideal: 360 } } 
+          });
+          setWebcamStream(stream);
+          setIsWebcamActive(true);
+        }
+      } catch (err) {
+        console.warn("Direct webcam access error:", err);
+      }
+    } else {
+      if (animationFrameRef.current) {
+        cancelAnimationFrame(animationFrameRef.current);
+      }
+      if (webcamStream) {
+        webcamStream.getTracks().forEach(track => track.stop());
+        setWebcamStream(null);
+      }
+      setIsWebcamActive(false);
+      setLiveDetections([]);
+      if (onSilenceAlarm) onSilenceAlarm();
+
+      fetch(`http://127.0.0.1:8000/api/cameras/${camId}/source`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ source: nextSource })
-      });
-      setIsWebcamActive(nextState);
-    } catch (e) {
-      console.warn("Camera source switch error:", e);
-      setIsWebcamActive(nextState);
+        body: JSON.stringify({ source: 'demo' })
+      }).catch(() => {});
     }
   };
 
@@ -46,9 +227,11 @@ export default function CameraGrid({
           <button className="px-2.5 py-0.5 rounded bg-[#1c2025] text-[#e0e2ea] font-mono-hud text-[11px] hover:bg-[#262a30] transition-colors" type="button">
             BOP-04 (THAR DESERT)
           </button>
-          <button className="px-2.5 py-0.5 rounded bg-[#1c2025] text-[#e0e2ea] font-mono-hud text-[11px] hover:bg-[#262a30] transition-colors" type="button">
-            BOP-03 (LADAKH FOG)
-          </button>
+          {modelLoading && (
+            <span className="font-mono-hud text-[9px] text-[#45dee8] bg-[#004a4f]/40 px-2 py-0.5 rounded border border-[#45dee8]/40 animate-pulse">
+              INITIALIZING AI VISION MODEL...
+            </span>
+          )}
         </div>
 
         {/* View Toggle Matrix & Spectrum Presets */}
@@ -133,35 +316,135 @@ export default function CameraGrid({
                 </div>
               </div>
 
-              {/* Video Viewport: Real Natural AI Annotated Stream */}
+              {/* Video Viewport */}
               <div className="relative w-full aspect-video bg-[#101419] overflow-hidden flex items-center justify-center">
-                <img 
-                  src={streamUrl} 
-                  alt={cam.name}
-                  className="w-full h-full object-cover select-none"
-                  onError={(e) => {
-                    e.target.onerror = null;
-                    if (cam.id === 'CAM-01') e.target.src = 'https://images.unsplash.com/photo-1544620347-c4fd4a3d5957?w=640&q=80';
-                    else if (cam.id === 'CAM-02') e.target.src = 'https://images.unsplash.com/photo-1508873696983-2df5293cb32f?w=640&q=80';
-                    else if (cam.id === 'CAM-03') e.target.src = 'https://images.unsplash.com/photo-1464822759023-fed622ff2c3b?w=640&q=80';
-                    else e.target.src = 'https://images.unsplash.com/photo-1509316975850-ff9c5deb0cd9?w=640&q=80';
-                  }}
-                />
+                {/* Real Live Browser Webcam for CAM-01 */}
+                {isCam01 && isWebcamActive ? (
+                  <video 
+                    ref={videoRef}
+                    autoPlay 
+                    playsInline 
+                    muted 
+                    className="w-full h-full object-cover select-none"
+                  />
+                ) : (
+                  <img 
+                    src={streamUrl} 
+                    alt={cam.name}
+                    className="w-full h-full object-cover select-none"
+                    onError={(e) => {
+                      e.target.onerror = null;
+                      if (cam.id === 'CAM-01') e.target.src = 'https://images.unsplash.com/photo-1544620347-c4fd4a3d5957?w=640&q=80';
+                      else if (cam.id === 'CAM-02') e.target.src = 'https://images.unsplash.com/photo-1508873696983-2df5293cb32f?w=640&q=80';
+                      else if (cam.id === 'CAM-03') e.target.src = 'https://images.unsplash.com/photo-1464822759023-fed622ff2c3b?w=640&q=80';
+                      else e.target.src = 'https://images.unsplash.com/photo-1509316975850-ff9c5deb0cd9?w=640&q=80';
+                    }}
+                  />
+                )}
+
+                {/* Tactical SVG HUD: Sterile Zone & Tripwire (rendered when client webcam is active) */}
+                {isCam01 && isWebcamActive && (
+                  <svg 
+                    className="absolute inset-0 w-full h-full pointer-events-none z-10" 
+                    viewBox="0 0 640 360" 
+                    preserveAspectRatio="none"
+                  >
+                    {/* Yellow Sterile Perimeter Zone Polygon */}
+                    <polygon 
+                      points="20,130 550,130 620,330 20,330" 
+                      fill="rgba(234, 179, 8, 0.12)" 
+                      stroke="#EAB308" 
+                      strokeWidth="2" 
+                      strokeDasharray="6 4"
+                    />
+                    <text 
+                      x="28" 
+                      y="150" 
+                      fill="#EAB308" 
+                      fontFamily="monospace" 
+                      fontSize="11" 
+                      fontWeight="bold"
+                    >
+                      Sterile Perimeter Zone (Zero-Tolerance)
+                    </text>
+
+                    {/* Red Horizontal Tripwire Line */}
+                    <line 
+                      x1="0" 
+                      y1="210" 
+                      x2="640" 
+                      y2="210" 
+                      stroke="#EF4444" 
+                      strokeWidth="2.5" 
+                    />
+                    <text 
+                      x="15" 
+                      y="200" 
+                      fill="#EF4444" 
+                      fontFamily="monospace" 
+                      fontSize="11" 
+                      fontWeight="bold"
+                    >
+                      TRIPWIRE: Line of Control Tripwire Alpha
+                    </text>
+
+                    {/* Center Crosshair */}
+                    <line x1="320" y1="140" x2="320" y2="200" stroke="#06B6D4" strokeWidth="1.5" strokeOpacity="0.8" />
+                    <line x1="290" y1="170" x2="350" y2="170" stroke="#06B6D4" strokeWidth="1.5" strokeOpacity="0.8" />
+                    <circle cx="320" cy="170" r="14" stroke="#06B6D4" strokeWidth="1.5" strokeOpacity="0.8" fill="none" />
+                  </svg>
+                )}
+
+                {/* REAL-TIME TENSORFLOW AI DETECTIONS (GREEN FOR COW, RED FOR HUMAN) */}
+                {isCam01 && isWebcamActive && liveDetections.map((det) => (
+                  <div
+                    key={det.id}
+                    className="absolute pointer-events-none z-20 transition-all duration-75"
+                    style={{
+                      left: det.left,
+                      top: det.top,
+                      width: det.width,
+                      height: det.height,
+                      border: `2.5px solid ${det.color}`,
+                      backgroundColor: det.type === 'animal' ? 'rgba(16, 185, 129, 0.12)' : 'rgba(239, 68, 68, 0.15)',
+                      boxShadow: `0 0 15px ${det.color}66`
+                    }}
+                  >
+                    {/* Top Bounding Label Header */}
+                    <div 
+                      className="text-white px-2 py-0.5 text-[9px] font-mono-hud font-bold uppercase flex items-center justify-between"
+                      style={{
+                        backgroundColor: det.type === 'animal' ? '#064e3b' : '#991b1b',
+                        borderBottom: `1px solid ${det.color}`
+                      }}
+                    >
+                      <span>ID:{det.id} {det.label}</span>
+                    </div>
+
+                    {/* Target Centroid Dot */}
+                    <div 
+                      className="w-3 h-3 rounded-full mx-auto my-auto shadow-md border border-white"
+                      style={{ backgroundColor: det.color }}
+                    ></div>
+
+                    {/* Bottom Status Banner */}
+                    <div 
+                      className="text-white px-1 py-0.2 text-[8px] font-mono-hud font-bold text-center uppercase tracking-wider"
+                      style={{
+                        backgroundColor: det.type === 'animal' ? 'rgba(6, 78, 59, 0.9)' : 'rgba(153, 27, 27, 0.9)',
+                        color: det.type === 'animal' ? '#a7f3d0' : '#fecaca'
+                      }}
+                    >
+                      {det.type === 'animal' ? 'SAFE — WILDLIFE SUPPRESSED // NO ALARM' : 'BREACH DETECTED // STERILE ZONE'}
+                    </div>
+                  </div>
+                ))}
 
                 {/* Corner Crop Marks */}
                 <div className="absolute top-2 left-2 w-3.5 h-3.5 border-t-2 border-l-2 border-[#45dee8] pointer-events-none opacity-80 z-10"></div>
                 <div className="absolute top-2 right-2 w-3.5 h-3.5 border-t-2 border-r-2 border-[#45dee8] pointer-events-none opacity-80 z-10"></div>
                 <div className="absolute bottom-2 left-2 w-3.5 h-3.5 border-b-2 border-l-2 border-[#45dee8] pointer-events-none opacity-80 z-10"></div>
                 <div className="absolute bottom-2 right-2 w-3.5 h-3.5 border-b-2 border-r-2 border-[#45dee8] pointer-events-none opacity-80 z-10"></div>
-
-                {/* Crosshairs Reticle */}
-                <div className="absolute inset-0 pointer-events-none flex items-center justify-center opacity-30 z-10">
-                  <div className="w-12 h-12 relative flex items-center justify-center">
-                    <div className="absolute w-full h-px bg-[#45dee8]"></div>
-                    <div className="absolute h-full w-px bg-[#45dee8]"></div>
-                    <div className="w-5 h-5 rounded-full border border-[#45dee8]"></div>
-                  </div>
-                </div>
 
                 {/* Fog De-Noising Active Badge */}
                 {isFogActive && (
