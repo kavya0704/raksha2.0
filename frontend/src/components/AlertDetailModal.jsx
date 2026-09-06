@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import axios from 'axios';
+import { apiService } from '../utils/apiService';
 
 export default function AlertDetailModal({ alert, onClose, onActionSuccess }) {
   const [notes, setNotes] = useState('');
@@ -14,11 +14,12 @@ export default function AlertDetailModal({ alert, onClose, onActionSuccess }) {
 
   const handleAction = async (actionType) => {
     try {
-      await axios.post(`http://127.0.0.1:8000/api/alerts/${alert.id}/action`, {
-        operator_id: 'BSF-74892 (Subedar K. Sharma)',
-        action: actionType,
-        notes: notes || `Action triggered from Command Center Dashboard.`
-      });
+      await apiService.takeAlertAction(
+        alert.id, 
+        actionType, 
+        'BSF-74892 (Subedar K. Sharma)', 
+        notes || `Action triggered from Command Center Dashboard.`
+      );
       if (onActionSuccess) onActionSuccess();
       onClose();
     } catch (err) {
@@ -29,15 +30,8 @@ export default function AlertDetailModal({ alert, onClose, onActionSuccess }) {
   const handleRequestFullFootage = async () => {
     setRequestingFootage(true);
     try {
-      const res = await axios.post('http://127.0.0.1:8000/api/footage/request', {
-        alert_id: alert.id,
-        camera_id: alert.camera_id,
-        bop_id: alert.bop_id,
-        start_time_iso: new Date(alert.detected_timestamp * 1000).toISOString(),
-        duration_seconds: 120,
-        requested_by: 'Subedar K. Sharma'
-      });
-      setFootageStatus(res.data.message);
+      const res = await apiService.requestFootage(alert);
+      setFootageStatus(res.message || "Evidentiary footage requested from edge store.");
     } catch (err) {
       setFootageStatus("Edge retrieval queued over throttled link.");
     }
@@ -47,8 +41,8 @@ export default function AlertDetailModal({ alert, onClose, onActionSuccess }) {
   const handleGenerateSitrep = async () => {
     setLoadingSitrep(true);
     try {
-      const res = await axios.post('http://127.0.0.1:8000/api/ai/sitrep', { alert_id: alert.id });
-      setAiSitrep(res.data.sitrep);
+      const sitrep = await apiService.generateSitrep(alert);
+      setAiSitrep(sitrep);
     } catch (err) {
       console.error("Error generating SitRep:", err);
     }
@@ -57,7 +51,11 @@ export default function AlertDetailModal({ alert, onClose, onActionSuccess }) {
 
   const snapshotUrl = alert.snapshot_path 
     ? `http://127.0.0.1:8000/snapshots/${alert.snapshot_path.split(/[\\\\/]/).pop()}` 
-    : (alert.thumbnail_base64 ? `data:image/jpeg;base64,${alert.thumbnail_base64}` : null);
+    : (alert.thumbnail_base64 
+        ? `data:image/jpeg;base64,${alert.thumbnail_base64}` 
+        : (alert.object_type === 'person' 
+            ? 'https://images.unsplash.com/photo-1544620347-c4fd4a3d5957?w=640&q=80' 
+            : 'https://images.unsplash.com/photo-1570042225831-d98fa7577f1e?w=640&q=80'));
 
   return (
     <div className="fixed inset-0 z-50 bg-black/85 backdrop-blur-sm flex items-center justify-center p-4">

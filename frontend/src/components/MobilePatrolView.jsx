@@ -74,6 +74,12 @@ export default function MobilePatrolView({ alerts = [], onAcknowledge }) {
                         src={thumbUrl} 
                         alt="Target" 
                         className="w-24 h-18 object-cover rounded border border-error/50 flex-shrink-0"
+                        onError={(e) => {
+                          e.target.onerror = null;
+                          e.target.src = a.object_type === 'person'
+                            ? 'https://images.unsplash.com/photo-1544620347-c4fd4a3d5957?w=160&q=80'
+                            : 'https://images.unsplash.com/photo-1570042225831-d98fa7577f1e?w=160&q=80';
+                        }}
                       />
                     ) : (
                       <div className="w-24 h-18 bg-surface-container border border-outline-variant rounded flex items-center justify-center text-[10px] text-outline">

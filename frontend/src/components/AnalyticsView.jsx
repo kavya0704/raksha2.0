@@ -12,7 +12,7 @@ import {
   Pie, 
   Cell 
 } from 'recharts';
-import axios from 'axios';
+import { apiService } from '../utils/apiService';
 
 const COLORS = ['#ffb4ab', '#ff9089', '#45dee8', '#5de6ff', '#a2eeff'];
 
@@ -25,12 +25,8 @@ export default function AnalyticsView() {
   }, []);
 
   const fetchAnalytics = async () => {
-    try {
-      const res = await axios.get('http://127.0.0.1:8000/api/analytics/summary');
-      setData(res.data);
-    } catch (err) {
-      console.error("Error fetching analytics:", err);
-    }
+    const res = await apiService.getAnalytics();
+    setData(res);
     setLoading(false);
   };
 

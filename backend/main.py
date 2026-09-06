@@ -47,8 +47,10 @@ async def lifespan(app: FastAPI):
     subscriber = HQMQTTSubscriber(db=db, broker_host="127.0.0.1", broker_port=1883, loop=loop)
     subscriber.start()
 
-    # 3. Start Edge Sentinel Unit (CAM-01 / BOP Nathu La -> Live Webcam by default)
-    edge_unit = EdgeUnit(bop_id="BOP-01-NATHULA", video_source="0", camera_id="CAM-01")
+    # 3. Start Edge Sentinel Unit (CAM-01 / BOP Nathu La)
+    demo_video = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "demo_assets", "border_patrol.mp4"))
+    default_src = demo_video if os.path.exists(demo_video) else "0"
+    edge_unit = EdgeUnit(bop_id="BOP-01-NATHULA", video_source=default_src, camera_id="CAM-01")
     try:
         edge_unit.start()
         set_edge_unit(edge_unit, "CAM-01")

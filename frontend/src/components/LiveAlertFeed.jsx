@@ -85,6 +85,12 @@ export default function LiveAlertFeed({ alerts = [], onSelectAlert, onAlertActio
                       src={thumbUrl} 
                       alt="Incident" 
                       className="w-16 h-12 object-cover rounded border border-[#3c494a] flex-shrink-0"
+                      onError={(e) => {
+                        e.target.onerror = null;
+                        e.target.src = alert.object_type === 'person' 
+                          ? 'https://images.unsplash.com/photo-1544620347-c4fd4a3d5957?w=128&q=80' 
+                          : 'https://images.unsplash.com/photo-1570042225831-d98fa7577f1e?w=128&q=80';
+                      }}
                     />
                   ) : (
                     <div className="w-16 h-12 bg-[#0a0e13] border border-[#3c494a] rounded flex items-center justify-center text-[10px] text-[#859394] font-mono-hud flex-shrink-0">

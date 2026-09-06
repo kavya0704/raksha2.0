@@ -12,85 +12,11 @@ import AuditTrailView from './components/AuditTrailView';
 import AICopilotView from './components/AICopilotView';
 import LoginModal from './components/LoginModal';
 import { alarmSystem } from './utils/alarmSystem';
+import { apiService, INITIAL_CAMERAS, INITIAL_ALERTS } from './utils/apiService';
 import axios from 'axios';
 
-const DEFAULT_CAMERAS = [
-  {
-    id: 'CAM-01',
-    name: 'BOP-01 NATHU LA (FORWARD SENTRY)',
-    sector: 'SIKKIM_NATHULA',
-    status: 'ONLINE',
-    fps: 29.8,
-    resolution: '1920x1080',
-    fog_enhancer_active: false,
-    scenario: 'High-Altitude Ridge Pass // Primary Sentinel',
-    location: { lat: 27.3866, lng: 88.8310 }
-  },
-  {
-    id: 'CAM-02',
-    name: 'BOP-02 RIDGE DEFILE (LWIR THERMAL)',
-    sector: 'SIKKIM_NATHULA',
-    status: 'ONLINE',
-    fps: 30.0,
-    resolution: '1280x720',
-    fog_enhancer_active: false,
-    scenario: 'Perimeter Razorwire Fence // FLIR IR',
-    location: { lat: 27.3910, lng: 88.8250 }
-  },
-  {
-    id: 'CAM-03',
-    name: 'BOP-03 VALLEY MARSH (FOG CORRIDOR)',
-    sector: 'DOKLAM_TRIJUNCTION',
-    status: 'ONLINE',
-    fps: 28.5,
-    resolution: '1920x1080',
-    fog_enhancer_active: true,
-    scenario: 'Doklam Defile // CLAHE De-Noised',
-    location: { lat: 27.3820, lng: 88.8390 }
-  },
-  {
-    id: 'CAM-04',
-    name: 'BOP-04 THAR SECTOR (DESERT BUFFER)',
-    sector: 'THAR_DESERT',
-    status: 'ONLINE',
-    fps: 30.0,
-    resolution: '1920x1080',
-    fog_enhancer_active: false,
-    scenario: 'Sector-IV Dunes // Optical Recon',
-    location: { lat: 27.3750, lng: 88.8220 }
-  }
-];
-
-const DEFAULT_ALERTS = [
-  {
-    id: 'ALT-NATHULA-01',
-    camera_id: 'CAM-01',
-    bop_id: 'BOP-01-NATHULA',
-    object_type: 'person',
-    confidence: 0.96,
-    incursion_type: 'STERILE_ZONE_BREACH',
-    zone_name: 'Zone A - Primary Defile',
-    severity: 'CRITICAL',
-    status: 'PENDING',
-    timestamp: Date.now() / 1000 - 60,
-    formatted_time: '2 mins ago',
-    dwell_time_seconds: 4.8
-  },
-  {
-    id: 'ALT-THAR-04',
-    camera_id: 'CAM-04',
-    bop_id: 'BOP-04-THAR',
-    object_type: 'cow',
-    confidence: 0.91,
-    incursion_type: 'WILDLIFE_PASSAGE',
-    zone_name: 'Buffer Zone - Thar Dunes',
-    severity: 'SAFE_SUPPRESSED',
-    status: 'RESOLVED',
-    timestamp: Date.now() / 1000 - 300,
-    formatted_time: '5 mins ago',
-    dwell_time_seconds: 12.4
-  }
-];
+const DEFAULT_CAMERAS = INITIAL_CAMERAS;
+const DEFAULT_ALERTS = INITIAL_ALERTS;
 
 export default function App() {
   const [user, setUser] = useState({ id: 'BSF-74892', name: 'Subedar K. Sharma', role: 'Subedar', sector: 'SIKKIM_NATHULA' });
@@ -205,28 +131,22 @@ export default function App() {
   };
 
   const fetchCameras = async () => {
-    try {
-      const res = await axios.get('http://127.0.0.1:8000/api/cameras');
-      if (res.data && res.data.length > 0) {
-        setCameras(res.data);
-      }
-    } catch (e) {}
+    const data = await apiService.getCameras();
+    if (data && data.length > 0) {
+      setCameras(data);
+    }
   };
 
   const fetchAlerts = async () => {
-    try {
-      const res = await axios.get('http://127.0.0.1:8000/api/alerts');
-      if (res.data && res.data.length > 0) {
-        setAlerts(res.data);
-      }
-    } catch (e) {}
+    const data = await apiService.getAlerts();
+    if (data && data.length > 0) {
+      setAlerts(data);
+    }
   };
 
   const handleToggleFog = async (camId, enabled) => {
     setCameras(prev => prev.map(c => c.id === camId ? { ...c, fog_enhancer_active: enabled } : c));
-    try {
-      await axios.post(`http://127.0.0.1:8000/api/cameras/${camId}/fog-enhancer`, { enabled });
-    } catch (e) {}
+    await apiService.toggleFog(camId, enabled);
   };
 
   const handleAlertAction = async (alertId, actionType) => {
@@ -237,14 +157,8 @@ export default function App() {
       alarmSystem.stop();
     }
 
-    try {
-      await axios.post(`http://127.0.0.1:8000/api/alerts/${alertId}/action`, {
-        operator_id: user?.id || 'BSF-74892',
-        action: actionType,
-        notes: `Quick action ${actionType} triggered from dashboard.`
-      });
-      fetchAlerts();
-    } catch (e) {}
+    await apiService.takeAlertAction(alertId, actionType, user?.name || user?.id || 'BSF-74892');
+    fetchAlerts();
   };
 
   const handleToggleMute = () => {

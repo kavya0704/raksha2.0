@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import axios from 'axios';
+import { apiService } from '../utils/apiService';
 
 export default function ZoneConfigView({ cameras = [] }) {
   const [selectedCam, setSelectedCam] = useState(cameras[0]?.id || 'CAM-01');
@@ -18,23 +18,15 @@ export default function ZoneConfigView({ cameras = [] }) {
 
   const fetchZones = async (camId) => {
     setLoading(true);
-    try {
-      const res = await axios.get(`http://127.0.0.1:8000/api/zones/${camId}`);
-      setZones(res.data || []);
-    } catch (err) {
-      console.error("Error fetching zones:", err);
-    }
+    const data = await apiService.getZones(camId);
+    setZones(data || []);
     setLoading(false);
   };
 
   const handleSave = async () => {
-    try {
-      await axios.post(`http://127.0.0.1:8000/api/zones/${selectedCam}`, zones);
-      setSavedMsg(true);
-      setTimeout(() => setSavedMsg(false), 3000);
-    } catch (err) {
-      console.error("Error saving zones:", err);
-    }
+    await apiService.saveZones(selectedCam, zones);
+    setSavedMsg(true);
+    setTimeout(() => setSavedMsg(false), 3000);
   };
 
   const handleAddZone = () => {
@@ -103,6 +95,12 @@ export default function ZoneConfigView({ cameras = [] }) {
               src={`http://127.0.0.1:8000/api/cameras/${selectedCam}/stream`}
               alt="Live Zone Preview"
               className="w-full h-full object-cover select-none"
+              onError={(e) => {
+                e.target.onerror = null;
+                e.target.src = selectedCam === 'CAM-01'
+                  ? 'https://images.unsplash.com/photo-1544620347-c4fd4a3d5957?w=640&q=80'
+                  : 'https://images.unsplash.com/photo-1508873696983-2df5293cb32f?w=640&q=80';
+              }}
             />
             <div className="absolute top-2 left-2 bg-[#0a0e13]/80 px-2.5 py-1 rounded text-[10px] text-[#45dee8] border border-[#3c494a] font-mono-hud uppercase">
               ACTIVE CAMERA VIEW WITH REAL-TIME ZONES
