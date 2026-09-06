@@ -161,8 +161,32 @@ def mjpeg_generator(camera_id: str):
                 continue
             
             frame = cv2.resize(frame, (640, 360))
-            # On-screen HUD
             h, w = frame.shape[:2]
+
+            # Scenario Annotations
+            if camera_id == "CAM-02":
+                # Emerald Green Bounding Box on Livestock
+                cv2.rectangle(frame, (230, 180), (390, 310), (0, 255, 0), 2)
+                cv2.rectangle(frame, (230, 155), (480, 180), (0, 100, 0), -1)
+                cv2.putText(frame, "ID:4120 Safe — Animal (Livestock), Suppressed", (235, 172),
+                            cv2.FONT_HERSHEY_SIMPLEX, 0.4, (255, 255, 255), 1)
+                cv2.putText(frame, "NO ALARM TRIGGERED", (235, 300),
+                            cv2.FONT_HERSHEY_SIMPLEX, 0.35, (0, 255, 0), 1)
+
+            elif camera_id == "CAM-03":
+                # Low-visibility defile corridor
+                cv2.line(frame, (0, 220), (640, 220), (0, 140, 255), 2)
+                cv2.putText(frame, "TRIPWIRE: Chushul Pass Corridors", (20, 210),
+                            cv2.FONT_HERSHEY_SIMPLEX, 0.4, (0, 140, 255), 1)
+
+            elif camera_id == "CAM-04":
+                # Sterile zone polygon
+                pts = np.array([[40, 140], [580, 140], [620, 340], [30, 340]], np.int32).reshape((-1, 1, 2))
+                cv2.polylines(frame, [pts], isClosed=True, color=(0, 215, 255), thickness=1)
+                cv2.putText(frame, "Doklam Buffer Zone (Restricted)", (50, 160),
+                            cv2.FONT_HERSHEY_SIMPLEX, 0.4, (0, 215, 255), 1)
+
+            # Top HUD Bar
             cv2.rectangle(frame, (0, 0), (w, 24), (15, 23, 42), -1)
             cv2.putText(frame, f"{camera_id} | REAL-TIME TACTICAL FEED", (10, 16), cv2.FONT_HERSHEY_SIMPLEX, 0.4, (0, 215, 255), 1)
             cv2.putText(frame, "LIVE EDGE SENTINEL", (w - 170, 16), cv2.FONT_HERSHEY_SIMPLEX, 0.4, (0, 255, 128), 1)
