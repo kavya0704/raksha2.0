@@ -61,12 +61,15 @@ export default function App() {
     return () => clearInterval(interval);
   }, []);
 
-  // WebSocket Real-Time Connection
+  // WebSocket Real-Time Connection (Local backend only)
   useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const isLocal = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
+    if (!isLocal) return;
+
     const connectWS = () => {
       try {
-        const wsUrl = window.location.protocol === 'https:' ? 'wss://127.0.0.1:8000/ws' : 'ws://127.0.0.1:8000/ws';
-        const ws = new WebSocket(wsUrl);
+        const ws = new WebSocket('ws://127.0.0.1:8000/ws');
         wsRef.current = ws;
 
         ws.onopen = () => {

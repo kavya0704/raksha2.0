@@ -10,7 +10,19 @@ export default function TacticalMap({ cameras = [], alerts = [], onSelectCamera 
   useEffect(() => {
     if (!mapRef.current) return;
 
-    if (!mapInstance.current) {
+    // Clean up existing instance if already initialized
+    if (mapInstance.current) {
+      try {
+        mapInstance.current.remove();
+      } catch (e) {}
+      mapInstance.current = null;
+    }
+
+    if (mapRef.current._leaflet_id) {
+      mapRef.current._leaflet_id = null;
+    }
+
+    try {
       // Initialize Leaflet map centered at Sikkim / Nathu La border sector
       const map = L.map(mapRef.current, {
         center: [27.3866, 88.8310],
@@ -41,35 +53,30 @@ export default function TacticalMap({ cameras = [], alerts = [], onSelectCamera 
       borderPoly.bindTooltip("STERILE BORDER BUFFER ZONE (ZERO TOLERANCE)", { className: 'tactical-tooltip' });
 
       mapInstance.current = map;
-    }
 
-    const map = mapInstance.current;
+      // Plot Camera Markers
+      cameras.forEach((cam) => {
+        if (!cam || !cam.location || cam.location.lat == null || cam.location.lng == null) return;
+        const isAlertActive = alerts.some(a => a.camera_id === cam.id && a.status === 'PENDING');
+        const markerColor = isAlertActive ? '#EF4444' : (cam.status === 'ONLINE' ? '#10B981' : '#64748B');
 
-    // Plot Camera Markers
-    cameras.forEach((cam) => {
-      const isAlertActive = alerts.some(a => a.camera_id === cam.id && a.status === 'PENDING');
-      const markerColor = isAlertActive ? '#EF4444' : (cam.status === 'ONLINE' ? '#10B981' : '#64748B');
+        const customIcon = L.divIcon({
+          className: 'custom-div-icon',
+          html: `
+            <div style="
+              background: ${markerColor};
+              width: 14px;
+              height: 14px;
+              border-radius: 50%;
+              border: 2px solid #0B0F17;
+              box-shadow: 0 0 10px ${markerColor};
+              animation: ${isAlertActive ? 'pulse-red 1s infinite' : 'none'};
+            "></div>
+          `,
+          iconSize: [14, 14],
+          iconAnchor: [7, 7]
+        });
 
-      const customIcon = L.divIcon({
-        className: 'custom-div-icon',
-        html: `
-          <div style="
-            background: ${markerColor};
-            width: 14px;
-            height: 14px;
-            border-radius: 50%;
-            border: 2px solid #0B0F17;
-            box-shadow: 0 0 10px ${markerColor};
-            animation: ${isAlertActive ? 'pulse-red 1s infinite' : 'none'};
-          "></div>
-        `,
-        iconSize: [14, 14],
-        iconAnchor: [7, 7]
-      });
-
-      if (markersRef.current[cam.id]) {
-        markersRef.current[cam.id].setIcon(customIcon);
-      } else {
         const marker = L.marker([cam.location.lat, cam.location.lng], { icon: customIcon }).addTo(map);
         marker.bindPopup(`
           <div style="font-family: monospace; font-size: 11px; color: #0B0F17;">
@@ -82,9 +89,19 @@ export default function TacticalMap({ cameras = [], alerts = [], onSelectCamera 
         marker.on('click', () => {
           if (onSelectCamera) onSelectCamera(cam);
         });
-        markersRef.current[cam.id] = marker;
+      });
+    } catch (err) {
+      console.warn("Leaflet map initialization warning:", err);
+    }
+
+    return () => {
+      if (mapInstance.current) {
+        try {
+          mapInstance.current.remove();
+        } catch (e) {}
+        mapInstance.current = null;
       }
-    });
+    };
   }, [cameras, alerts, onSelectCamera]);
 
   return (
