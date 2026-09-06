@@ -2,7 +2,11 @@ import React, { useState, useRef, useEffect } from 'react';
 import * as tf from '@tensorflow/tfjs';
 import * as cocoSsd from '@tensorflow-models/coco-ssd';
 
-const ANIMAL_CLASSES = new Set(['cow', 'horse', 'sheep', 'dog', 'cat', 'bird', 'elephant', 'bear', 'zebra', 'giraffe']);
+const ANIMAL_CLASSES = new Set([
+  'cow', 'horse', 'sheep', 'dog', 'cat', 'bird', 'elephant', 
+  'bear', 'zebra', 'giraffe', 'goat', 'camel', 'donkey', 
+  'pig', 'deer', 'cattle', 'bull', 'ox'
+]);
 const VEHICLE_CLASSES = new Set(['car', 'truck', 'bus', 'motorcycle', 'bicycle']);
 
 export default function CameraGrid({ 
@@ -25,6 +29,8 @@ export default function CameraGrid({
   const videoRef = useRef(null);
   const modelRef = useRef(null);
   const animationFrameRef = useRef(null);
+  const lastAlertTimeRef = useRef(0);
+  const currentAlertIdRef = useRef(null);
 
   // Load COCO-SSD model once
   useEffect(() => {
@@ -141,25 +147,50 @@ export default function CameraGrid({
 
           setLiveDetections(mappedDetections);
 
-          // Trigger continuous alarm ONLY if human is present
+          // Trigger continuous alarm ONLY if human is present (throttled to once per 5 seconds)
+          const now = Date.now();
           if (hasHumanBreach) {
-            if (onTriggerAlert) {
-              onTriggerAlert({
-                id: `ALT-NATHULA-${Math.floor(10000 + Math.random() * 90000)}`,
-                camera_id: 'CAM-01',
-                bop_id: 'BOP-01-NATHULA',
-                object_type: 'person',
-                confidence: 0.96,
-                incursion_type: 'STERILE_ZONE_BREACH',
-                zone_name: 'Sterile Perimeter Zone (Zero-Tolerance)',
-                severity: 'CRITICAL',
-                timestamp: Date.now() / 1000,
-                formatted_time: new Date().toLocaleTimeString()
-              });
+            if (now - lastAlertTimeRef.current > 5000) {
+              lastAlertTimeRef.current = now;
+              const alertId = `ALT-NATHULA-${Math.floor(10000 + Math.random() * 90000)}`;
+              currentAlertIdRef.current = alertId;
+              if (onTriggerAlert) {
+                onTriggerAlert({
+                  id: alertId,
+                  camera_id: 'CAM-01',
+                  bop_id: 'BOP-01-NATHULA',
+                  object_type: 'person',
+                  confidence: 0.96,
+                  incursion_type: 'STERILE_ZONE_BREACH',
+                  zone_name: 'Sterile Perimeter Zone (Zero-Tolerance)',
+                  severity: 'CRITICAL',
+                  timestamp: Date.now() / 1000,
+                  formatted_time: new Date().toLocaleTimeString()
+                });
+              }
             }
           } else if (hasAnimal && !hasHumanBreach) {
-            // Silence alarm for animals!
-            if (onSilenceAlarm) onSilenceAlarm();
+            // Log safe wildlife suppression to alert feed (throttled to once per 10 seconds, no siren)
+            if (now - lastAlertTimeRef.current > 10000) {
+              lastAlertTimeRef.current = now;
+              const animalDet = mappedDetections.find(d => d.type === 'animal');
+              const animalName = animalDet ? (animalDet.className.charAt(0).toUpperCase() + animalDet.className.slice(1)) : 'Wildlife';
+              if (onTriggerAlert) {
+                onTriggerAlert({
+                  id: `SAFE-ANIMAL-${Math.floor(10000 + Math.random() * 90000)}`,
+                  camera_id: 'CAM-01',
+                  bop_id: 'BOP-01-NATHULA',
+                  object_type: animalName.toLowerCase(),
+                  confidence: 0.94,
+                  incursion_type: 'SAFE_WILDLIFE_PASSAGE',
+                  zone_name: 'Perimeter Buffer (Grazing / Wildlife Corridor)',
+                  severity: 'SAFE_SUPPRESSED',
+                  status: 'SUPPRESSED',
+                  timestamp: Date.now() / 1000,
+                  formatted_time: new Date().toLocaleTimeString()
+                });
+              }
+            }
           }
         } catch (e) {}
       }

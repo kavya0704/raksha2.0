@@ -34,6 +34,12 @@ export default function App() {
   const [activeAlarm, setActiveAlarm] = useState(null);
 
   const wsRef = useRef(null);
+  const activeAlarmRef = useRef(null);
+
+  // Keep ref in sync
+  useEffect(() => {
+    activeAlarmRef.current = activeAlarm;
+  }, [activeAlarm]);
 
   // Unlock Audio Context on first interaction
   useEffect(() => {
@@ -83,7 +89,7 @@ export default function App() {
               handleNewAlert(msg.data);
             } else if (msg.type === 'ALERT_STATUS_UPDATED') {
               setAlerts((prev) => prev.map(a => a.id === msg.data.id ? { ...a, status: msg.data.status } : a));
-              if (activeAlarm && activeAlarm.id === msg.data.id && msg.data.status !== 'PENDING') {
+              if (activeAlarmRef.current && activeAlarmRef.current.id === msg.data.id && msg.data.status !== 'PENDING') {
                 setActiveAlarm(null);
                 alarmSystem.stop();
               }
@@ -108,7 +114,7 @@ export default function App() {
     return () => {
       if (wsRef.current) wsRef.current.close();
     };
-  }, [activeAlarm]);
+  }, []); // No dependencies — connect once on mount
 
   const handleNewAlert = (alertData) => {
     setAlerts((prev) => {
@@ -122,15 +128,11 @@ export default function App() {
 
     if (isHuman) {
       setActiveAlarm(alertData);
-      // CONTINUOUS MILITARY SIREN: Rings indefinitely until silenced
+      // CONTINUOUS MILITARY SIREN: Rings indefinitely until silenced by operator
       alarmSystem.startContinuousSiren();
-    } else {
-      // Animal or Safe Suppression: Stop siren immediately
-      if (activeAlarm) {
-        setActiveAlarm(null);
-      }
-      alarmSystem.stop();
     }
+    // NOTE: Animal/safe detections are logged but do NOT silence the alarm.
+    // The alarm must be manually silenced by clicking "SILENCE SIREN".
   };
 
   const fetchCameras = async () => {
