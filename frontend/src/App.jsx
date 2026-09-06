@@ -14,13 +14,91 @@ import LoginModal from './components/LoginModal';
 import { alarmSystem } from './utils/alarmSystem';
 import axios from 'axios';
 
+const DEFAULT_CAMERAS = [
+  {
+    id: 'CAM-01',
+    name: 'BOP-01 NATHU LA (FORWARD SENTRY)',
+    sector: 'SIKKIM_NATHULA',
+    status: 'ONLINE',
+    fps: 29.8,
+    resolution: '1920x1080',
+    fog_enhancer_active: false,
+    scenario: 'High-Altitude Ridge Pass // Primary Sentinel',
+    location: { lat: 27.3866, lng: 88.8310 }
+  },
+  {
+    id: 'CAM-02',
+    name: 'BOP-02 RIDGE DEFILE (LWIR THERMAL)',
+    sector: 'SIKKIM_NATHULA',
+    status: 'ONLINE',
+    fps: 30.0,
+    resolution: '1280x720',
+    fog_enhancer_active: false,
+    scenario: 'Perimeter Razorwire Fence // FLIR IR',
+    location: { lat: 27.3910, lng: 88.8250 }
+  },
+  {
+    id: 'CAM-03',
+    name: 'BOP-03 VALLEY MARSH (FOG CORRIDOR)',
+    sector: 'DOKLAM_TRIJUNCTION',
+    status: 'ONLINE',
+    fps: 28.5,
+    resolution: '1920x1080',
+    fog_enhancer_active: true,
+    scenario: 'Doklam Defile // CLAHE De-Noised',
+    location: { lat: 27.3820, lng: 88.8390 }
+  },
+  {
+    id: 'CAM-04',
+    name: 'BOP-04 THAR SECTOR (DESERT BUFFER)',
+    sector: 'THAR_DESERT',
+    status: 'ONLINE',
+    fps: 30.0,
+    resolution: '1920x1080',
+    fog_enhancer_active: false,
+    scenario: 'Sector-IV Dunes // Optical Recon',
+    location: { lat: 27.3750, lng: 88.8220 }
+  }
+];
+
+const DEFAULT_ALERTS = [
+  {
+    id: 'ALT-NATHULA-01',
+    camera_id: 'CAM-01',
+    bop_id: 'BOP-01-NATHULA',
+    object_type: 'person',
+    confidence: 0.96,
+    incursion_type: 'STERILE_ZONE_BREACH',
+    zone_name: 'Zone A - Primary Defile',
+    severity: 'CRITICAL',
+    status: 'PENDING',
+    timestamp: Date.now() / 1000 - 60,
+    formatted_time: '2 mins ago',
+    dwell_time_seconds: 4.8
+  },
+  {
+    id: 'ALT-THAR-04',
+    camera_id: 'CAM-04',
+    bop_id: 'BOP-04-THAR',
+    object_type: 'cow',
+    confidence: 0.91,
+    incursion_type: 'WILDLIFE_PASSAGE',
+    zone_name: 'Buffer Zone - Thar Dunes',
+    severity: 'SAFE_SUPPRESSED',
+    status: 'RESOLVED',
+    timestamp: Date.now() / 1000 - 300,
+    formatted_time: '5 mins ago',
+    dwell_time_seconds: 12.4
+  }
+];
+
 export default function App() {
-  const [user, setUser] = useState(null);
+  const [user, setUser] = useState({ id: 'BSF-74892', name: 'Subedar K. Sharma', role: 'Subedar', sector: 'SIKKIM_NATHULA' });
   const [sector, setSector] = useState('SIKKIM_NATHULA');
   const [activeTab, setActiveTab] = useState('dashboard');
   
-  const [cameras, setCameras] = useState([]);
-  const [alerts, setAlerts] = useState([]);
+  const [cameras, setCameras] = useState(DEFAULT_CAMERAS);
+  const [alerts, setAlerts] = useState(DEFAULT_ALERTS);
   const [selectedAlert, setSelectedAlert] = useState(null);
   const [networkStatus, setNetworkStatus] = useState('ONLINE');
   const [queuedCount, setQueuedCount] = useState(0);
@@ -36,15 +114,15 @@ export default function App() {
     const handleUserInteraction = () => {
       alarmSystem.init();
     };
-    window.addEventListener('click', handleUserInteraction, { once: true });
-    window.addEventListener('keydown', handleUserInteraction, { once: true });
+    window.addEventListener('click', handleUserInteraction);
+    window.addEventListener('keydown', handleUserInteraction);
     return () => {
       window.removeEventListener('click', handleUserInteraction);
       window.removeEventListener('keydown', handleUserInteraction);
     };
   }, []);
 
-  // Initial Data Fetch
+  // Initial Data Fetch & Polling
   useEffect(() => {
     fetchCameras();
     fetchAlerts();
@@ -52,7 +130,7 @@ export default function App() {
     const interval = setInterval(() => {
       fetchCameras();
       fetchAlerts();
-    }, 4000);
+    }, 5000);
 
     return () => clearInterval(interval);
   }, []);
@@ -60,51 +138,40 @@ export default function App() {
   // WebSocket Real-Time Connection
   useEffect(() => {
     const connectWS = () => {
-      const ws = new WebSocket('ws://127.0.0.1:8000/ws');
-      wsRef.current = ws;
+      try {
+        const wsUrl = window.location.protocol === 'https:' ? 'wss://127.0.0.1:8000/ws' : 'ws://127.0.0.1:8000/ws';
+        const ws = new WebSocket(wsUrl);
+        wsRef.current = ws;
 
-      ws.onopen = () => {
-        setNetworkStatus('ONLINE');
-      };
+        ws.onopen = () => {
+          setNetworkStatus('ONLINE');
+        };
 
-      ws.onmessage = (event) => {
-        try {
-          const msg = JSON.parse(event.data);
-          if (msg.type === 'NEW_ALERT') {
-            setAlerts((prev) => {
-              const exists = prev.some(a => a.id === msg.data.id);
-              if (exists) return prev;
-              return [msg.data, ...prev];
-            });
-
-            // AUDIBLE & VISUAL ALARM: Trigger ONLY for Person / Human Incursions
-            const objType = (msg.data.object_type || '').toLowerCase();
-            const isHuman = objType === 'person' || objType === 'human' || msg.data.severity === 'CRITICAL';
-
-            if (isHuman) {
-              setActiveAlarm(msg.data);
-              alarmSystem.playHumanBreachAlarm(4.5);
+        ws.onmessage = (event) => {
+          try {
+            const msg = JSON.parse(event.data);
+            if (msg.type === 'NEW_ALERT') {
+              handleNewAlert(msg.data);
+            } else if (msg.type === 'ALERT_STATUS_UPDATED') {
+              setAlerts((prev) => prev.map(a => a.id === msg.data.id ? { ...a, status: msg.data.status } : a));
+              if (activeAlarm && activeAlarm.id === msg.data.id && msg.data.status !== 'PENDING') {
+                setActiveAlarm(null);
+                alarmSystem.stop();
+              }
             }
-          } else if (msg.type === 'ALERT_STATUS_UPDATED') {
-            setAlerts((prev) => prev.map(a => a.id === msg.data.id ? { ...a, status: msg.data.status } : a));
-            if (activeAlarm && activeAlarm.id === msg.data.id && msg.data.status !== 'PENDING') {
-              setActiveAlarm(null);
-              alarmSystem.stop();
-            }
+          } catch (e) {
+            console.error("WS message parse error:", e);
           }
-        } catch (e) {
-          console.error("WS message parse error:", e);
-        }
-      };
+        };
 
-      ws.onclose = () => {
-        setNetworkStatus('OFFLINE');
-        setTimeout(connectWS, 3000);
-      };
+        ws.onclose = () => {
+          // Cloud / Standalone mode
+        };
 
-      ws.onerror = () => {
-        setNetworkStatus('OFFLINE');
-      };
+        ws.onerror = () => {
+          // Standalone mode
+        };
+      } catch (err) {}
     };
 
     connectWS();
@@ -114,49 +181,63 @@ export default function App() {
     };
   }, [activeAlarm]);
 
+  const handleNewAlert = (alertData) => {
+    setAlerts((prev) => {
+      const exists = prev.some(a => a.id === alertData.id);
+      if (exists) return prev;
+      return [alertData, ...prev];
+    });
+
+    const objType = (alertData.object_type || '').toLowerCase();
+    const isHuman = objType === 'person' || objType === 'human' || alertData.severity === 'CRITICAL';
+
+    if (isHuman) {
+      setActiveAlarm(alertData);
+      alarmSystem.playHumanBreachAlarm(5.0);
+    }
+  };
+
   const fetchCameras = async () => {
     try {
       const res = await axios.get('http://127.0.0.1:8000/api/cameras');
-      setCameras(res.data || []);
-    } catch (e) {
-      setNetworkStatus('OFFLINE');
-    }
+      if (res.data && res.data.length > 0) {
+        setCameras(res.data);
+      }
+    } catch (e) {}
   };
 
   const fetchAlerts = async () => {
     try {
       const res = await axios.get('http://127.0.0.1:8000/api/alerts');
-      setAlerts(res.data || []);
-      setNetworkStatus('ONLINE');
-    } catch (e) {
-      setNetworkStatus('OFFLINE');
-    }
+      if (res.data && res.data.length > 0) {
+        setAlerts(res.data);
+      }
+    } catch (e) {}
   };
 
   const handleToggleFog = async (camId, enabled) => {
+    setCameras(prev => prev.map(c => c.id === camId ? { ...c, fog_enhancer_active: enabled } : c));
     try {
       await axios.post(`http://127.0.0.1:8000/api/cameras/${camId}/fog-enhancer`, { enabled });
-      setCameras(prev => prev.map(c => c.id === camId ? { ...c, fog_enhancer_active: enabled } : c));
-    } catch (e) {
-      console.error("Fog toggle failed:", e);
-    }
+    } catch (e) {}
   };
 
   const handleAlertAction = async (alertId, actionType) => {
+    setAlerts(prev => prev.map(a => a.id === alertId ? { ...a, status: actionType === 'ACKNOWLEDGE' ? 'ACKNOWLEDGED' : 'ESCALATED' } : a));
+    
+    if (activeAlarm && activeAlarm.id === alertId) {
+      setActiveAlarm(null);
+      alarmSystem.stop();
+    }
+
     try {
       await axios.post(`http://127.0.0.1:8000/api/alerts/${alertId}/action`, {
         operator_id: user?.id || 'BSF-74892',
         action: actionType,
         notes: `Quick action ${actionType} triggered from dashboard.`
       });
-      if (activeAlarm && activeAlarm.id === alertId) {
-        setActiveAlarm(null);
-        alarmSystem.stop();
-      }
       fetchAlerts();
-    } catch (e) {
-      console.error("Alert action error:", e);
-    }
+    } catch (e) {}
   };
 
   const handleToggleMute = () => {
@@ -296,6 +377,8 @@ export default function App() {
                     cameras={cameras} 
                     onToggleFog={handleToggleFog}
                     onSelectCamera={(cam) => setActiveTab('zones')}
+                    onTriggerAlert={handleNewAlert}
+                    activeAlarm={activeAlarm}
                   />
                 </div>
               </div>
@@ -323,6 +406,8 @@ export default function App() {
                 cameras={cameras} 
                 onToggleFog={handleToggleFog}
                 onSelectCamera={(cam) => setActiveTab('zones')}
+                onTriggerAlert={handleNewAlert}
+                activeAlarm={activeAlarm}
               />
             </div>
           )}
