@@ -5,11 +5,9 @@ Powered by Groq ultra-low latency LLM inference.
 import os
 import json
 import logging
-try:
-    from dotenv import load_dotenv
-    load_dotenv()
-except ImportError:
-    pass
+
+# NOTE: No dotenv needed. Railway/cloud platforms inject env vars directly.
+# For local dev, set GROQ_API_KEY in your shell or .env manually.
 
 logger = logging.getLogger("TacticalAICopilot")
 

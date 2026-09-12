@@ -10,11 +10,12 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 WORKDIR /app
 
-# Install Python requirements
+# Copy and install Python requirements first (cached layer)
 COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+RUN pip install --no-cache-dir --upgrade pip && \
+    pip install --no-cache-dir -r requirements.txt
 
-# Copy application files
+# Copy all application source files
 COPY . .
 
 # Environment config
@@ -23,5 +24,5 @@ ENV PORT=8000
 
 EXPOSE 8000
 
-# Start FastAPI server on port dynamically assigned by Railway
+# Start: Python reads $PORT from environment (Railway injects this)
 CMD ["python", "-m", "backend.main"]
