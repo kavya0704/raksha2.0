@@ -39,19 +39,25 @@ async def lifespan(app: FastAPI):
     logger.info("=======================================================")
 
     # 1. Start Embedded MQTT Broker (if local Mosquitto is not already running on port 1883)
-    broker = SimpleMQTTBroker(port=1883)
-    broker.start()
+    try:
+        broker = SimpleMQTTBroker(port=1883)
+        broker.start()
+    except Exception as e:
+        logger.warning(f"Embedded MQTT Broker initialization note: {e}")
 
     # 2. Start HQ MQTT Subscriber
-    loop = asyncio.get_running_loop()
-    subscriber = HQMQTTSubscriber(db=db, broker_host="127.0.0.1", broker_port=1883, loop=loop)
-    subscriber.start()
+    try:
+        loop = asyncio.get_running_loop()
+        subscriber = HQMQTTSubscriber(db=db, broker_host="127.0.0.1", broker_port=1883, loop=loop)
+        subscriber.start()
+    except Exception as e:
+        logger.warning(f"HQ MQTT Subscriber initialization note: {e}")
 
     # 3. Start Edge Sentinel Unit (CAM-01 / BOP Nathu La)
-    demo_video = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "demo_assets", "border_patrol.mp4"))
-    default_src = demo_video if os.path.exists(demo_video) else "0"
-    edge_unit = EdgeUnit(bop_id="BOP-01-NATHULA", video_source=default_src, camera_id="CAM-01")
     try:
+        demo_video = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "demo_assets", "border_patrol.mp4"))
+        default_src = demo_video if os.path.exists(demo_video) else "0"
+        edge_unit = EdgeUnit(bop_id="BOP-01-NATHULA", video_source=default_src, camera_id="CAM-01")
         edge_unit.start()
         set_edge_unit(edge_unit, "CAM-01")
     except Exception as e:
@@ -134,4 +140,5 @@ if os.path.exists(frontend_dist):
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run("backend.main:app", host="0.0.0.0", port=8000, reload=False)
+    port = int(os.environ.get("PORT", 8000))
+    uvicorn.run("backend.main:app", host="0.0.0.0", port=port, reload=False)
