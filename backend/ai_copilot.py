@@ -5,9 +5,11 @@ Powered by Groq ultra-low latency LLM inference.
 import os
 import json
 import logging
-from dotenv import load_dotenv
-
-load_dotenv()
+try:
+    from dotenv import load_dotenv
+    load_dotenv()
+except ImportError:
+    pass
 
 logger = logging.getLogger("TacticalAICopilot")
 
