@@ -1,6 +1,6 @@
 # 🛡️ RAKSHA AI 2.0 (रक्षा AI)
 ### **AI-Based Intelligent Video Analytics Platform for Border Surveillance using Existing CCTV Infrastructure**
-
+prototype link https://raksha20-ten.vercel.app/
 <div align="center">
 
 ![BSF Sentinel AI](docs/assets/bsf_sentinel_emblem.png)
