@@ -93,9 +93,18 @@ def switch_camera_source(camera_id: str, req: SourceChangeRequest):
         raise HTTPException(status_code=404, detail="Camera Edge unit not active")
 
     target_src = req.source
-    if req.source in ["demo", "close", "stop", "off", "reset"]:
-        target_src = VIDEO_MAP.get(camera_id, VIDEO_MAP["CAM-01"])
-    elif req.source == "webcam":
+    src_lower = str(req.source).lower().strip()
+    if src_lower in ["demo", "close", "stop", "off", "reset", "patrol", "human"]:
+        target_src = os.path.join(ASSETS_DIR, "border_patrol.mp4")
+    elif src_lower in ["wildlife", "cow", "cattle", "camel", "animal", "desert", "livestock"]:
+        target_src = os.path.join(ASSETS_DIR, "border_desert_wildlife.mp4")
+    elif src_lower in ["dog", "canine", "stray"]:
+        target_src = os.path.join(ASSETS_DIR, "border_wildlife.mp4")
+    elif src_lower in ["fog", "clahe", "weather"]:
+        target_src = os.path.join(ASSETS_DIR, "border_fog.mp4")
+    elif src_lower in ["doklam", "sterile"]:
+        target_src = os.path.join(ASSETS_DIR, "border_doklam_sterile.mp4")
+    elif src_lower in ["0", "webcam"]:
         target_src = "0"
 
     unit.set_video_source(target_src)

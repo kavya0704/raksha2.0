@@ -15,7 +15,7 @@ class TacticalAlarmSystem {
     this.audioCtx = null;
     this.activeNodes = []; // Track all active oscillator/gain pairs
     this.isPlaying = false;
-    this.isMuted = false;
+    this.isMuted = false; // Armed by default for audible tactical sirens
     this.intervalId = null;
     this._userInteracted = false;
   }
@@ -47,7 +47,7 @@ class TacticalAlarmSystem {
 
   /** Start continuous military siren — loops every 1s until stop() */
   startContinuousSiren() {
-    if (this.isMuted) return;
+    this.isMuted = false;
     
     // Always ensure AudioContext is ready
     this.init();

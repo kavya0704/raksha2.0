@@ -32,7 +32,7 @@ class EdgeUnit:
 
         # AI & Processing components
         self.fog_enhancer = FogEnhancer()
-        self.classifier = ClassificationFilter(confidence_threshold=0.35)
+        self.classifier = ClassificationFilter(confidence_threshold=0.25)
         self.zone_analytics = ZoneAnalytics(confirmation_frames=3)
         self.storage = EdgeStorage()
         self.mqtt_sync = EdgeMQTTSync(
@@ -57,7 +57,7 @@ class EdgeUnit:
     def start(self):
         from edge.detector import TargetDetector
         logger.info(f"Loading YOLOv8 nano detector on Edge Unit ({self.bop_id})...")
-        self.detector = TargetDetector(model_name="yolov8n.pt", conf_thresh=0.30)
+        self.detector = TargetDetector(model_name="yolov8n.pt", conf_thresh=0.25)
         
         self.running = True
         self.mqtt_sync.start()
@@ -148,16 +148,27 @@ class EdgeUnit:
 
                 color = eval_res.get('color', (255, 255, 255))
                 label = eval_res.get('label', f"{cname}")
+                is_suppressed = eval_res['action'] == 'SUPPRESS'
 
                 # Draw bounding box & track ID
                 cv2.rectangle(display_frame, (x1, y1), (x2, y2), color, 2)
                 cv2.circle(display_frame, (cx, cy), 4, color, -1)
                 
                 # Bounding label background
-                (lw, lh), _ = cv2.getTextSize(f"ID:{tid} {label}", cv2.FONT_HERSHEY_SIMPLEX, 0.45, 1)
-                cv2.rectangle(display_frame, (x1, y1 - lh - 6), (x1 + lw + 6, y1), color, -1)
-                cv2.putText(display_frame, f"ID:{tid} {label}", (x1 + 3, y1 - 4),
-                            cv2.FONT_HERSHEY_SIMPLEX, 0.45, (0, 0, 0) if eval_res['action'] == 'SUPPRESS' else (255, 255, 255), 1)
+                display_label = f"ID:{tid} {label}"
+                (lw, lh), _ = cv2.getTextSize(display_label, cv2.FONT_HERSHEY_SIMPLEX, 0.45, 1)
+                cv2.rectangle(display_frame, (x1, max(0, y1 - lh - 8)), (x1 + lw + 8, y1), color, -1)
+                text_color = (0, 40, 0) if is_suppressed else (255, 255, 255)
+                cv2.putText(display_frame, display_label, (x1 + 4, y1 - 4),
+                            cv2.FONT_HERSHEY_SIMPLEX, 0.45, text_color, 1)
+
+                if is_suppressed:
+                    # Bottom safe badge
+                    safe_msg = f"SAFE: {cname.upper()} SUPPRESSED // NO ALARM"
+                    (slw, slh), _ = cv2.getTextSize(safe_msg, cv2.FONT_HERSHEY_SIMPLEX, 0.35, 1)
+                    cv2.rectangle(display_frame, (x1, y2), (x1 + slw + 6, y2 + slh + 6), (0, 100, 0), -1)
+                    cv2.putText(display_frame, safe_msg, (x1 + 3, y2 + slh + 3),
+                                cv2.FONT_HERSHEY_SIMPLEX, 0.35, (160, 255, 160), 1)
 
                 # If tactical threat, check tripwire / zone incursion
                 if eval_res['is_alert']:

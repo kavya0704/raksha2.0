@@ -13,11 +13,12 @@ L.Icon.Default.mergeOptions({
 export default function TacticalMap({ cameras = [], alerts = [], onSelectCamera }) {
   const mapContainerRef = useRef(null);
   const mapInstance = useRef(null);
+  const tileLayerRef = useRef(null);
   const markersLayerRef = useRef(null);
   const onSelectCameraRef = useRef(onSelectCamera);
   const camerasRef = useRef(cameras);
   const alertsRef = useRef(alerts);
-  const [mapMode, setMapMode] = useState('SATELLITE');
+  const [mapMode, setMapMode] = useState('GIS'); // 'GIS', 'SATELLITE', 'RADAR'
   const [radarAngle, setRadarAngle] = useState(0);
   const [mapReady, setMapReady] = useState(false);
 
@@ -35,15 +36,13 @@ export default function TacticalMap({ cameras = [], alerts = [], onSelectCamera 
     return () => clearInterval(interval);
   }, [mapMode]);
 
-  // Initialize Leaflet map ONCE — container is always in DOM (hidden via CSS when in RADAR mode)
+  // Initialize Leaflet map ONCE
   useEffect(() => {
     const container = mapContainerRef.current;
     if (!container) return;
 
-    // Don't recreate if already initialized
     if (mapInstance.current) return;
 
-    // Safety: clear any stale leaflet id
     if (container._leaflet_id) {
       container._leaflet_id = null;
     }
@@ -52,14 +51,19 @@ export default function TacticalMap({ cameras = [], alerts = [], onSelectCamera 
       const map = L.map(container, {
         center: [27.3866, 88.8310],
         zoom: 13,
-        zoomControl: true,
+        zoomControl: false,
         attributionControl: false
       });
 
-      L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      // Add Zoom control at bottom right
+      L.control.zoom({ position: 'bottomright' }).addTo(map);
+
+      // Watermark-Free High-Contrast Tactical Map Tiles (Esri Topo / OpenStreetMap)
+      const initialLayer = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Topo_Map/MapServer/tile/{z}/{y}/{x}', {
         maxZoom: 19,
         className: 'tactical-map-tiles'
       }).addTo(map);
+      tileLayerRef.current = initialLayer;
 
       // Red Sterile Perimeter Buffer Polygon
       L.polygon([
@@ -69,9 +73,9 @@ export default function TacticalMap({ cameras = [], alerts = [], onSelectCamera 
         [27.375, 88.825]
       ], {
         color: '#EF4444',
-        weight: 2,
+        weight: 2.5,
         fillColor: '#EF4444',
-        fillOpacity: 0.18,
+        fillOpacity: 0.22,
         dashArray: '6, 6'
       }).addTo(map).bindTooltip("STERILE BORDER BUFFER ZONE (ZERO TOLERANCE)", {
         className: 'tactical-tooltip',
@@ -96,34 +100,54 @@ export default function TacticalMap({ cameras = [], alerts = [], onSelectCamera 
       markersLayerRef.current = markersLayer;
       mapInstance.current = map;
 
-      // Force tile load after layout
-      setTimeout(() => {
+      // Force tile refresh across multiple intervals
+      [100, 300, 600, 1200].forEach((delay) => {
+        setTimeout(() => {
+          if (mapInstance.current) {
+            mapInstance.current.invalidateSize();
+            setMapReady(true);
+          }
+        }, delay);
+      });
+
+      // Resize observer to keep map sharp
+      const resizeObserver = new ResizeObserver(() => {
         if (mapInstance.current) {
           mapInstance.current.invalidateSize();
-          setMapReady(true);
         }
-      }, 300);
+      });
+      resizeObserver.observe(container);
+
+      return () => {
+        resizeObserver.disconnect();
+        if (mapInstance.current) {
+          try { mapInstance.current.remove(); } catch (e) {}
+          mapInstance.current = null;
+          markersLayerRef.current = null;
+        }
+      };
     } catch (err) {
       console.warn("Leaflet map init error:", err);
     }
+  }, []);
 
-    return () => {
-      if (mapInstance.current) {
-        try { mapInstance.current.remove(); } catch (e) {}
-        mapInstance.current = null;
-        markersLayerRef.current = null;
-      }
-    };
-  }, []); // Runs ONCE on mount — never again
-
-  // When switching back to SATELLITE, invalidate map size so tiles reload
+  // Switch Tile Layer between GIS / SATELLITE
   useEffect(() => {
-    if (mapMode === 'SATELLITE' && mapInstance.current) {
-      setTimeout(() => {
-        if (mapInstance.current) {
-          mapInstance.current.invalidateSize();
-        }
-      }, 100);
+    if (!mapInstance.current) return;
+
+    if (mapMode === 'GIS') {
+      if (tileLayerRef.current) mapInstance.current.removeLayer(tileLayerRef.current);
+      tileLayerRef.current = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Topo_Map/MapServer/tile/{z}/{y}/{x}', {
+        maxZoom: 19,
+        className: 'tactical-map-tiles'
+      }).addTo(mapInstance.current);
+      setTimeout(() => mapInstance.current?.invalidateSize(), 100);
+    } else if (mapMode === 'SATELLITE') {
+      if (tileLayerRef.current) mapInstance.current.removeLayer(tileLayerRef.current);
+      tileLayerRef.current = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
+        maxZoom: 19
+      }).addTo(mapInstance.current);
+      setTimeout(() => mapInstance.current?.invalidateSize(), 100);
     }
   }, [mapMode]);
 
@@ -188,6 +212,16 @@ export default function TacticalMap({ cameras = [], alerts = [], onSelectCamera 
         <div className="flex items-center gap-2 pointer-events-auto">
           <div className="flex items-center bg-[#1c2025]/90 border border-[#3c494a] p-0.5 rounded shadow-lg backdrop-blur-sm">
             <button
+              onClick={() => setMapMode('GIS')}
+              className={`px-2 py-0.5 rounded font-mono-hud text-[10px] font-bold transition-all ${
+                mapMode === 'GIS'
+                  ? 'bg-[#45dee8] text-[#00373a] shadow-sm'
+                  : 'text-[#bbc9ca] hover:text-[#e0e2ea]'
+              }`}
+            >
+              🗺️ GIS MAP
+            </button>
+            <button
               onClick={() => setMapMode('SATELLITE')}
               className={`px-2 py-0.5 rounded font-mono-hud text-[10px] font-bold transition-all ${
                 mapMode === 'SATELLITE'
@@ -195,7 +229,7 @@ export default function TacticalMap({ cameras = [], alerts = [], onSelectCamera 
                   : 'text-[#bbc9ca] hover:text-[#e0e2ea]'
               }`}
             >
-              🗺️ GIS MAP
+              🛰️ SATELLITE
             </button>
             <button
               onClick={() => setMapMode('RADAR')}
@@ -223,11 +257,11 @@ export default function TacticalMap({ cameras = [], alerts = [], onSelectCamera 
       </div>
 
       {/* BOTH map and radar stay in DOM — CSS controls visibility */}
-      {/* Leaflet Map Container — always mounted, hidden when in RADAR mode */}
+      {/* Leaflet Map Container — visible in GIS and SATELLITE modes */}
       <div
         ref={mapContainerRef}
         className="w-full h-full min-h-[220px] z-0"
-        style={{ display: mapMode === 'SATELLITE' ? 'block' : 'none' }}
+        style={{ display: mapMode !== 'RADAR' ? 'block' : 'none', width: '100%', height: '100%' }}
       />
 
       {/* Vector Tactical Radar Mode — shown only when RADAR */}

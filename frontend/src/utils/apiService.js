@@ -7,9 +7,11 @@ import axios from 'axios';
 const isLocal = typeof window !== 'undefined' && 
   (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1');
 
-const API_BASE = isLocal 
-  ? (window.location.port === '8000' ? '/api' : 'http://127.0.0.1:8000/api')
-  : '/api';
+const customBackend = import.meta.env?.VITE_BACKEND_URL || import.meta.env?.VITE_API_URL || '';
+
+export const API_BASE = customBackend
+  ? (customBackend.endsWith('/api') ? customBackend : `${customBackend.replace(/\/$/, '')}/api`)
+  : (isLocal ? (window.location.port === '8000' ? '/api' : 'http://127.0.0.1:8000/api') : '/api');
 
 // Initial Mock Cameras
 export const INITIAL_CAMERAS = [

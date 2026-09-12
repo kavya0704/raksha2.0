@@ -124,6 +124,9 @@ if os.path.exists(frontend_dist):
     async def serve_react_app(full_path: str):
         if full_path.startswith("api") or full_path.startswith("snapshots") or full_path.startswith("ws"):
             return None
+        target_file = os.path.join(frontend_dist, full_path)
+        if full_path and os.path.isfile(target_file):
+            return FileResponse(target_file)
         index_file = os.path.join(frontend_dist, "index.html")
         if os.path.exists(index_file):
             return FileResponse(index_file)

@@ -14,11 +14,13 @@ ALERTABLE_CLASSES = {
 }
 
 SUPPRESSED_ANIMAL_CLASSES = {
-    'dog', 'cat', 'cow', 'horse', 'sheep', 'elephant', 'bear', 'bird', 'zebra', 'giraffe'
+    'dog', 'cat', 'cow', 'horse', 'sheep', 'elephant', 'bear', 'bird', 'zebra', 'giraffe',
+    'goat', 'camel', 'donkey', 'pig', 'deer', 'cattle', 'bull', 'ox', 'monkey', 'rabbit',
+    'duck', 'chicken', 'goose', 'turkey', 'teddy bear', 'animal', 'wildlife', 'livestock', 'canine'
 }
 
 class ClassificationFilter:
-    def __init__(self, confidence_threshold: float = 0.40):
+    def __init__(self, confidence_threshold: float = 0.25):
         self.confidence_threshold = confidence_threshold
 
     def evaluate(self, class_name: str, confidence: float) -> dict:

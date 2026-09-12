@@ -29,7 +29,7 @@ export default function App() {
   const [networkStatus, setNetworkStatus] = useState('ONLINE');
   const [queuedCount, setQueuedCount] = useState(0);
 
-  // Tactical Alarm & Siren State
+  // Tactical Alarm & Siren State (Armed by default)
   const [isMuted, setIsMuted] = useState(false);
   const [activeAlarm, setActiveAlarm] = useState(null);
 
@@ -67,15 +67,35 @@ export default function App() {
     return () => clearInterval(interval);
   }, []);
 
-  // WebSocket Real-Time Connection (Local backend only)
+  // WebSocket Real-Time Connection (Local backend or Railway/Cloud backend)
   useEffect(() => {
     if (typeof window === 'undefined') return;
-    const isLocal = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
-    if (!isLocal) return;
+    
+    const getWsUrl = () => {
+      if (import.meta.env?.VITE_WS_URL) return import.meta.env.VITE_WS_URL;
+      const customBackend = import.meta.env?.VITE_BACKEND_URL || import.meta.env?.VITE_API_URL;
+      if (customBackend) {
+        try {
+          const url = new URL(customBackend);
+          const proto = url.protocol === 'https:' ? 'wss:' : 'ws:';
+          return `${proto}//${url.host}/ws`;
+        } catch (e) {}
+      }
+      const isLocal = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
+      if (isLocal) {
+        return window.location.port === '8000'
+          ? `${window.location.protocol === 'https:' ? 'wss:' : 'ws:'}//${window.location.host}/ws`
+          : 'ws://127.0.0.1:8000/ws';
+      }
+      return null;
+    };
+
+    const wsUrl = getWsUrl();
+    if (!wsUrl) return;
 
     const connectWS = () => {
       try {
-        const ws = new WebSocket('ws://127.0.0.1:8000/ws');
+        const ws = new WebSocket(wsUrl);
         wsRef.current = ws;
 
         ws.onopen = () => {
@@ -124,11 +144,23 @@ export default function App() {
     });
 
     const objType = (alertData.object_type || '').toLowerCase();
-    const isHuman = objType === 'person' || objType === 'human' || alertData.severity === 'CRITICAL';
+    const isAnimal = ['cow', 'dog', 'cat', 'bird', 'horse', 'sheep', 'elephant', 'bear', 'zebra', 'giraffe', 'goat', 'camel', 'donkey', 'pig', 'deer', 'cattle', 'bull', 'ox', 'wildlife', 'animal'].some(a => objType.includes(a)) || alertData.severity === 'SAFE_SUPPRESSED' || alertData.status === 'SUPPRESSED' || alertData.incursion_type === 'SAFE_WILDLIFE_PASSAGE';
+    
+    if (isAnimal) {
+      // ANIMAL / COW / WILDLIFE DETECTED: Immediately suppress and silence any alarm!
+      alarmSystem.stop();
+      setActiveAlarm(null);
+      return;
+    }
 
-    if (isHuman) {
+    // Siren sounds ONLY for genuine human incursion
+    const isHumanThreat = (objType === 'person' || objType === 'human') && !isAnimal && alertData.severity === 'CRITICAL';
+
+    if (isHumanThreat) {
+      setIsMuted(false);
+      alarmSystem.setMuted(false);
       setActiveAlarm(alertData);
-      // CONTINUOUS MILITARY SIREN: Rings indefinitely until silenced by operator
+      // CONTINUOUS MILITARY SIREN: Rings only for verified human breach
       alarmSystem.startContinuousSiren();
     }
     // NOTE: Animal/safe detections are logged but do NOT silence the alarm.

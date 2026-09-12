@@ -5,7 +5,8 @@ import * as cocoSsd from '@tensorflow-models/coco-ssd';
 const ANIMAL_CLASSES = new Set([
   'cow', 'horse', 'sheep', 'dog', 'cat', 'bird', 'elephant', 
   'bear', 'zebra', 'giraffe', 'goat', 'camel', 'donkey', 
-  'pig', 'deer', 'cattle', 'bull', 'ox'
+  'pig', 'deer', 'cattle', 'bull', 'ox', 'monkey', 'rabbit',
+  'duck', 'chicken', 'goose', 'turkey', 'teddy bear', 'animal', 'wildlife', 'canine'
 ]);
 const VEHICLE_CLASSES = new Set(['car', 'truck', 'bus', 'motorcycle', 'bicycle']);
 
@@ -24,6 +25,8 @@ export default function CameraGrid({
   
   // Real-time AI Detections from Browser TensorFlow / COCO-SSD
   const [liveDetections, setLiveDetections] = useState([]);
+  const [simulatedDetections, setSimulatedDetections] = useState([]);
+  const [activeScenario, setActiveScenario] = useState('patrol');
   const [modelLoading, setModelLoading] = useState(false);
   
   const videoRef = useRef(null);
@@ -108,7 +111,7 @@ export default function CameraGrid({
                 type: 'animal',
                 className: cls,
                 label: `Safe — Animal (${cls.charAt(0).toUpperCase() + cls.slice(1)}), Suppressed`,
-                color: '#10B981', // Emerald Green
+                color: '#10B981', // Emerald Green (Safe)
                 left: `${leftPct}%`,
                 top: `${topPct}%`,
                 width: `${widthPct}%`,
@@ -116,13 +119,18 @@ export default function CameraGrid({
                 score
               });
             } else if (cls === 'person') {
-              hasHumanBreach = true;
+              // Trigger intrusion ONLY if person crosses tripwire (bottom 45% of viewport)
+              const isCrossingTripwire = centerY >= (vHeight * 0.52);
+              if (isCrossingTripwire) {
+                hasHumanBreach = true;
+              }
+
               mappedDetections.push({
                 id: 10 + idx,
-                type: 'human',
+                type: isCrossingTripwire ? 'human' : 'person_safe',
                 className: 'person',
-                label: `ALERT: PERSON (${score}%)`,
-                color: '#EF4444', // Crimson Red
+                label: isCrossingTripwire ? `ALERT: PERSON BREACH (${score}%)` : `PERSON (${score}%) // OUTSIDE ZONE`,
+                color: isCrossingTripwire ? '#EF4444' : '#06B6D4', // Crimson Red if breaching, Cyan if in safe area
                 left: `${leftPct}%`,
                 top: `${topPct}%`,
                 width: `${widthPct}%`,
@@ -147,10 +155,16 @@ export default function CameraGrid({
 
           setLiveDetections(mappedDetections);
 
-          // Trigger continuous alarm ONLY if human is present (throttled to once per 5 seconds)
+          // Wildlife Suppression: If ANY animal is detected, animal suppression completely silences alarms
+          if (hasAnimal) {
+            hasHumanBreach = false;
+            if (onSilenceAlarm) onSilenceAlarm();
+          }
+
+          // Trigger continuous alarm ONLY if verified human breach AND NO animal present
           const now = Date.now();
-          if (hasHumanBreach) {
-            if (now - lastAlertTimeRef.current > 5000) {
+          if (hasHumanBreach && !hasAnimal) {
+            if (now - lastAlertTimeRef.current > 6000) {
               lastAlertTimeRef.current = now;
               const alertId = `ALT-NATHULA-${Math.floor(10000 + Math.random() * 90000)}`;
               currentAlertIdRef.current = alertId;
@@ -160,18 +174,19 @@ export default function CameraGrid({
                   camera_id: 'CAM-01',
                   bop_id: 'BOP-01-NATHULA',
                   object_type: 'person',
-                  confidence: 0.96,
+                  confidence: 0.98,
                   incursion_type: 'STERILE_ZONE_BREACH',
                   zone_name: 'Sterile Perimeter Zone (Zero-Tolerance)',
                   severity: 'CRITICAL',
+                  status: 'PENDING',
                   timestamp: Date.now() / 1000,
                   formatted_time: new Date().toLocaleTimeString()
                 });
               }
             }
-          } else if (hasAnimal && !hasHumanBreach) {
-            // Log safe wildlife suppression to alert feed (throttled to once per 10 seconds, no siren)
-            if (now - lastAlertTimeRef.current > 10000) {
+          } else if (hasAnimal) {
+            // Safe wildlife - NO ALARM, logged to quiet buffer feed
+            if (now - lastAlertTimeRef.current > 12000) {
               lastAlertTimeRef.current = now;
               const animalDet = mappedDetections.find(d => d.type === 'animal');
               const animalName = animalDet ? (animalDet.className.charAt(0).toUpperCase() + animalDet.className.slice(1)) : 'Wildlife';
@@ -181,7 +196,7 @@ export default function CameraGrid({
                   camera_id: 'CAM-01',
                   bop_id: 'BOP-01-NATHULA',
                   object_type: animalName.toLowerCase(),
-                  confidence: 0.94,
+                  confidence: 0.95,
                   incursion_type: 'SAFE_WILDLIFE_PASSAGE',
                   zone_name: 'Perimeter Buffer (Grazing / Wildlife Corridor)',
                   severity: 'SAFE_SUPPRESSED',
@@ -252,13 +267,104 @@ export default function CameraGrid({
     }
   };
 
+  const simulateAnimalDetection = (animalType = 'cow') => {
+    if (onSilenceAlarm) onSilenceAlarm();
+    const formattedName = animalType.charAt(0).toUpperCase() + animalType.slice(1);
+    const mockDet = {
+      id: Math.floor(4100 + Math.random() * 800),
+      type: 'animal',
+      className: animalType,
+      label: `Safe — Animal (${formattedName}), Suppressed`,
+      color: '#10B981', // Emerald Green
+      left: '30%',
+      top: '35%',
+      width: '38%',
+      height: '45%',
+      score: 96
+    };
+    setSimulatedDetections([mockDet]);
+    
+    if (onTriggerAlert) {
+      onTriggerAlert({
+        id: `SAFE-${animalType.toUpperCase()}-${Math.floor(10000 + Math.random() * 90000)}`,
+        camera_id: 'CAM-01',
+        bop_id: 'BOP-01-NATHULA',
+        object_type: formattedName.toLowerCase(),
+        confidence: 0.96,
+        incursion_type: 'SAFE_WILDLIFE_PASSAGE',
+        zone_name: 'Perimeter Buffer (Grazing / Wildlife Corridor)',
+        severity: 'SAFE_SUPPRESSED',
+        status: 'SUPPRESSED',
+        timestamp: Date.now() / 1000,
+        formatted_time: new Date().toLocaleTimeString()
+      });
+    }
+  };
+
+  const simulateHumanDetection = () => {
+    const mockDet = {
+      id: Math.floor(10 + Math.random() * 80),
+      type: 'human',
+      className: 'person',
+      label: 'ALERT: PERSON (98%)',
+      color: '#EF4444', // Crimson Red
+      left: '38%',
+      top: '30%',
+      width: '24%',
+      height: '55%',
+      score: 98
+    };
+    setSimulatedDetections([mockDet]);
+    
+    const alertId = `ALT-NATHULA-${Math.floor(10000 + Math.random() * 90000)}`;
+    if (onTriggerAlert) {
+      onTriggerAlert({
+        id: alertId,
+        camera_id: 'CAM-01',
+        bop_id: 'BOP-01-NATHULA',
+        object_type: 'person',
+        confidence: 0.98,
+        incursion_type: 'STERILE_ZONE_BREACH',
+        zone_name: 'Sterile Perimeter Zone (Zero-Tolerance)',
+        severity: 'CRITICAL',
+        status: 'PENDING',
+        timestamp: Date.now() / 1000,
+        formatted_time: new Date().toLocaleTimeString()
+      });
+    }
+  };
+
+  const clearSimulatedDetections = () => {
+    setSimulatedDetections([]);
+  };
+
+  const handleScenarioChange = async (scenarioKey) => {
+    setActiveScenario(scenarioKey);
+    try {
+      await fetch(`http://127.0.0.1:8000/api/cameras/CAM-01/source`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ source: scenarioKey })
+      });
+    } catch (e) {
+      try {
+        await fetch(`/api/cameras/CAM-01/source`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ source: scenarioKey })
+        });
+      } catch (err) {}
+    }
+  };
+
   const isCam01Breached = activeAlarm && activeAlarm.camera_id === 'CAM-01' && activeAlarm.severity === 'CRITICAL';
+  const allCam01Detections = [...(isWebcamActive ? liveDetections : []), ...simulatedDetections];
 
   return (
     <div className="flex flex-col gap-3 w-full">
-      {/* Sub-sector Filters, Layout View Toggles, Global Emergency Actions */}
+      {/* Sub-sector Filters, Simulation Controls, Layout View Toggles */}
       <div className="flex flex-wrap items-center justify-between gap-2 bg-[#0a0e13] border border-[#3c494a]/60 p-2 rounded">
-        {/* Outpost Filter Badges */}
+        {/* Outpost Filter Badges & AI Quick Test */}
         <div className="flex items-center gap-1.5 flex-wrap">
           <span className="font-mono-hud text-[9px] text-[#bbc9ca] uppercase mr-1">OUTPOST:</span>
           <button className="px-2.5 py-0.5 rounded bg-[#1c2025] text-[#e0e2ea] font-mono-hud text-[11px] hover:bg-[#262a30] transition-colors border border-[#3c494a]" type="button">
@@ -270,6 +376,48 @@ export default function CameraGrid({
           <button className="px-2.5 py-0.5 rounded bg-[#1c2025] text-[#e0e2ea] font-mono-hud text-[11px] hover:bg-[#262a30] transition-colors" type="button">
             BOP-04 (THAR DESERT)
           </button>
+          
+          <div className="h-4 w-px bg-[#3c494a] mx-1"></div>
+
+          {/* Instant Animal / Threat Test Buttons */}
+          <span className="font-mono-hud text-[9px] text-[#10B981] uppercase font-bold">TEST AI:</span>
+          <button 
+            onClick={() => simulateAnimalDetection('cow')}
+            className="px-2 py-0.5 rounded bg-[#064e3b] text-[#a7f3d0] border border-[#10B981] font-mono-hud text-[10px] font-bold hover:bg-[#047857] transition-all flex items-center gap-1 shadow-sm"
+            title="Simulate Safe Cow Detection with Green Bounding Box"
+          >
+            <span>🐄 COW (GREEN)</span>
+          </button>
+          <button 
+            onClick={() => simulateAnimalDetection('dog')}
+            className="px-2 py-0.5 rounded bg-[#064e3b] text-[#a7f3d0] border border-[#10B981] font-mono-hud text-[10px] font-bold hover:bg-[#047857] transition-all flex items-center gap-1 shadow-sm"
+            title="Simulate Safe Dog Detection with Green Bounding Box"
+          >
+            <span>🐕 DOG (GREEN)</span>
+          </button>
+          <button 
+            onClick={() => simulateAnimalDetection('camel')}
+            className="px-2 py-0.5 rounded bg-[#064e3b] text-[#a7f3d0] border border-[#10B981] font-mono-hud text-[10px] font-bold hover:bg-[#047857] transition-all flex items-center gap-1 shadow-sm"
+            title="Simulate Safe Camel Detection with Green Bounding Box"
+          >
+            <span>🐪 CAMEL (GREEN)</span>
+          </button>
+          <button 
+            onClick={simulateHumanDetection}
+            className="px-2 py-0.5 rounded bg-[#93000a] text-[#ffdad6] border border-[#ffb4ab] font-mono-hud text-[10px] font-bold hover:bg-[#ba1a1a] transition-all flex items-center gap-1 shadow-sm"
+            title="Simulate Human Incursion with Red Bounding Box & Alarm"
+          >
+            <span>🚶 HUMAN (RED)</span>
+          </button>
+          {simulatedDetections.length > 0 && (
+            <button 
+              onClick={clearSimulatedDetections}
+              className="px-2 py-0.5 rounded bg-[#1c2025] text-[#bbc9ca] hover:text-[#ffb4ab] border border-[#3c494a] font-mono-hud text-[10px]"
+              title="Clear simulated boxes"
+            >
+              CLEAR
+            </button>
+          )}
           {modelLoading && (
             <span className="font-mono-hud text-[9px] text-[#45dee8] bg-[#004a4f]/40 px-2 py-0.5 rounded border border-[#45dee8]/40 animate-pulse">
               INITIALIZING AI VISION MODEL...
@@ -451,8 +599,8 @@ export default function CameraGrid({
                   </svg>
                 )}
 
-                {/* REAL-TIME TENSORFLOW AI DETECTIONS (GREEN FOR COW, RED FOR HUMAN) */}
-                {isCam01 && isWebcamActive && liveDetections.map((det) => (
+                {/* REAL-TIME AI & SIMULATED DETECTIONS (GREEN FOR ANIMAL/COW/DOG, RED FOR HUMAN) */}
+                {isCam01 && allCam01Detections.map((det) => (
                   <div
                     key={det.id}
                     className="absolute pointer-events-none z-20 transition-all duration-75"
@@ -462,8 +610,8 @@ export default function CameraGrid({
                       width: det.width,
                       height: det.height,
                       border: `2.5px solid ${det.color}`,
-                      backgroundColor: det.type === 'animal' ? 'rgba(16, 185, 129, 0.12)' : 'rgba(239, 68, 68, 0.15)',
-                      boxShadow: `0 0 15px ${det.color}66`
+                      backgroundColor: det.type === 'animal' ? 'rgba(16, 185, 129, 0.16)' : 'rgba(239, 68, 68, 0.18)',
+                      boxShadow: `0 0 16px ${det.color}88`
                     }}
                   >
                     {/* Top Bounding Label Header */}
@@ -474,7 +622,7 @@ export default function CameraGrid({
                         borderBottom: `1px solid ${det.color}`
                       }}
                     >
-                      <span>ID:{det.id} {det.label}</span>
+                      <span>{det.type === 'animal' ? '🟢' : '🚨'} ID:{det.id} {det.label}</span>
                     </div>
 
                     {/* Target Centroid Dot */}
@@ -485,13 +633,13 @@ export default function CameraGrid({
 
                     {/* Bottom Status Banner */}
                     <div 
-                      className="text-white px-1 py-0.2 text-[8px] font-mono-hud font-bold text-center uppercase tracking-wider"
+                      className="text-white px-1 py-0.5 text-[8px] font-mono-hud font-bold text-center uppercase tracking-wider"
                       style={{
-                        backgroundColor: det.type === 'animal' ? 'rgba(6, 78, 59, 0.9)' : 'rgba(153, 27, 27, 0.9)',
+                        backgroundColor: det.type === 'animal' ? 'rgba(6, 78, 59, 0.95)' : 'rgba(153, 27, 27, 0.95)',
                         color: det.type === 'animal' ? '#a7f3d0' : '#fecaca'
                       }}
                     >
-                      {det.type === 'animal' ? 'SAFE — WILDLIFE SUPPRESSED // NO ALARM' : 'BREACH DETECTED // STERILE ZONE'}
+                      {det.type === 'animal' ? `🛡️ SAFE: ${det.className?.toUpperCase() || 'WILDLIFE'} SUPPRESSED // NO ALARM` : 'BREACH DETECTED // STERILE ZONE'}
                     </div>
                   </div>
                 ))}
@@ -525,8 +673,8 @@ export default function CameraGrid({
               </div>
 
               {/* Bottom Control Strip */}
-              <div className="bg-[#181c21] border-t border-[#3c494a]/80 px-3 py-1.5 flex items-center justify-between">
-                <div className="flex items-center gap-2">
+              <div className="bg-[#181c21] border-t border-[#3c494a]/80 px-3 py-1.5 flex items-center justify-between flex-wrap gap-1.5">
+                <div className="flex items-center gap-2 flex-wrap">
                   {/* Webcam toggle for CAM-01 */}
                   {isCam01 && (
                     <button
@@ -541,6 +689,34 @@ export default function CameraGrid({
                       <span className="material-symbols-outlined text-xs">videocam</span>
                       <span>{isWebcamActive ? '🔴 STOP / CLOSE WEBCAM' : '📷 OPEN WEBCAM'}</span>
                     </button>
+                  )}
+
+                  {/* Scenario switcher for CAM-01 */}
+                  {isCam01 && !isWebcamActive && (
+                    <div className="flex items-center gap-1 bg-[#101419] p-0.5 rounded border border-[#3c494a]">
+                      <span className="text-[9px] text-[#bbc9ca] font-mono-hud px-1 hidden sm:inline">SCENARIO:</span>
+                      <button
+                        onClick={() => handleScenarioChange('patrol')}
+                        className={`px-1.5 py-0.5 rounded text-[9px] font-mono-hud font-bold ${activeScenario === 'patrol' ? 'bg-[#93000a] text-[#ffdad6]' : 'text-[#bbc9ca] hover:text-white'}`}
+                        title="Infiltration Threat"
+                      >
+                        🚶 THREAT
+                      </button>
+                      <button
+                        onClick={() => handleScenarioChange('wildlife')}
+                        className={`px-1.5 py-0.5 rounded text-[9px] font-mono-hud font-bold ${activeScenario === 'wildlife' ? 'bg-[#064e3b] text-[#a7f3d0] border border-[#10B981]' : 'text-[#bbc9ca] hover:text-white'}`}
+                        title="Wildlife / Cattle Grazing"
+                      >
+                        🐄 COW
+                      </button>
+                      <button
+                        onClick={() => handleScenarioChange('dog')}
+                        className={`px-1.5 py-0.5 rounded text-[9px] font-mono-hud font-bold ${activeScenario === 'dog' ? 'bg-[#064e3b] text-[#a7f3d0] border border-[#10B981]' : 'text-[#bbc9ca] hover:text-white'}`}
+                        title="Border Patrol Canine / Dog"
+                      >
+                        🐕 DOG
+                      </button>
+                    </div>
                   )}
 
                   {/* Fog Enhancement Toggle */}
